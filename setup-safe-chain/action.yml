@@ -1,0 +1,33 @@
+name: Setup Aikido Safe Chain
+description: Install Aikido Safe Chain from the newest immutable release that is at least cooldown-hours old, verifying its checksum.
+
+inputs:
+  cooldown-hours:
+    description: Minimum age in hours of the release to install.
+    default: "96"
+
+outputs:
+  version:
+    description: The installed Safe Chain version.
+    value: ${{ steps.resolve.outputs.version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve Safe Chain version
+      id: resolve
+      shell: bash
+      env:
+        COOLDOWN_HOURS: ${{ inputs.cooldown-hours }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        version=$("$GITHUB_ACTION_PATH/resolve-version.sh")
+        echo "Safe Chain $version"
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Install Safe Chain
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        SAFE_CHAIN_VERSION: ${{ steps.resolve.outputs.version }}
+      run: '"$GITHUB_ACTION_PATH/install.sh"'

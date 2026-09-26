@@ -1,0 +1,41 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: tests/test_resolve_version.sh
+
+  setup-safe-chain:
+    name: Setup Safe Chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - id: setup
+        # actionlint does not parse the $/ self-repository syntax yet, and the job
+        # checks out the repository anyway.
+        uses: ./setup-safe-chain  # zizmor: ignore[self-repository]
+
+      - name: Check the installed version
+        env:
+          WANT: ${{ steps.setup.outputs.version }}
+        run: |
+          got=$("$HOME/.safe-chain/bin/safe-chain" -v)
+          echo "$got"
+          grep -F "Current safe-chain version: ${WANT}" <<<"$got"
