@@ -19,7 +19,7 @@
 ```mermaid
 flowchart TD
   A[Dependabot PR opened / synchronize / reopened] --> B[caller: 各リポジトリの dependabot-review.yml]
-  B --> C[reusable: rewse/actions/.github/workflows/dependabot-review.yml]
+  B --> C[composite: rewse/actions/dependabot-review]
   C --> D[dependabot/fetch-metadata で更新種別を取得]
   D -->|major を含む / 取得失敗| X[コメント + risk:high → 終了]
   D -->|patch / minor のみ| E[kiro-cli headless でリスク評価]
@@ -30,9 +30,9 @@ flowchart TD
   G -->|失敗 / タイムアウト / チェックなし| Z[コメント → 終了]
 ```
 
-`rewse/actions` には reusable workflow `.github/workflows/dependabot-review.yml`（`on: workflow_call`）を置く。判定、コメント、マージ、Kiro CLI のインストールをすべて担う。プロンプトと判定ロジックはここにだけ置き、各リポジトリはタグを打った SHA で参照する。参照の更新は各リポジトリの Dependabot `github-actions` エントリが担い、`rewse/*` は cooldown の対象外なので遅れない。
+`rewse/actions` には composite action `dependabot-review/` を置く。checkout、判定、コメント、マージ、Kiro CLI のインストールをすべて担う。reusable workflow ではなく composite action にするのは、`$GITHUB_ACTION_PATH` で同梱のスクリプトを参照できるからで、reusable workflow からは自分自身のリポジトリのファイルを固定した SHA で読む手段がない。プロンプトと判定ロジックはここにだけ置き、各リポジトリはタグを打った SHA で参照する。参照の更新は各リポジトリの Dependabot `github-actions` エントリが担い、`rewse/*` は cooldown の対象外なので遅れない。
 
-各リポジトリには caller として `.github/workflows/dependabot-review.yml` を置く。`pull_request`（`opened`, `synchronize`, `reopened`）で起動し、`github.actor == 'dependabot[bot]'` のときだけ reusable workflow を呼ぶ。`pull_request_target` は使わない。
+各リポジトリには caller として `.github/workflows/dependabot-review.yml` を置く。`pull_request`（`opened`, `synchronize`, `reopened`）で起動し、`github.actor == 'dependabot[bot]'` のときだけ評価ジョブを動かし、ジョブの `permissions` と secrets の受け渡しを受け持つ。`pull_request_target` は使わない。
 
 `concurrency` は PR 番号単位にして `cancel-in-progress: true` とする。Dependabot が rebase で push し直したら古い実行を止め、新しい head で評価し直す。
 
@@ -48,7 +48,7 @@ flowchart TD
 
 GitHub App は `rewse` アカウントで 1 つ作り、対象の 10 リポジトリにインストールする。App の権限は Contents: write、Pull requests: write、Metadata: read に限る。App のトークンはマージだけに使う。
 
-caller と reusable workflow の最上位 `permissions` は `contents: read` とし、評価ジョブには `pull-requests: write`（コメントとラベル付け）、`issues: write`（ラベルの作成）、`checks: read` と `statuses: read`（CI の待機）だけを追加する。`GITHUB_TOKEN` には `contents: write` を渡さない。
+caller の最上位 `permissions` は `contents: read` とし、評価ジョブには `pull-requests: write`（コメントとラベル付け）、`issues: write`（ラベルの作成）、`checks: read` と `statuses: read`（CI の待機）だけを追加する。`GITHUB_TOKEN` には `contents: write` を渡さない。
 
 ## リスク評価
 
@@ -96,7 +96,7 @@ PR 本文と changelog は上流のメンテナが書いた文章で、悪意あ
 
 ### Kiro の実行条件
 
-タイムアウトは 10 分とする。モデルは reusable workflow の入力 `kiro-model` で指定でき、空なら Kiro の既定を使う。
+タイムアウトは 10 分とする。モデルは action の入力 `kiro-model` で指定でき、空なら Kiro の既定を使う。
 
 ## マージ処理
 
@@ -139,7 +139,7 @@ low 判定のあと、次の順に実行する。
 
 ## 展開手順
 
-1. `rewse/actions` に reusable workflow と `AGENTS.md`（インストール方法の例外）を追加し、`vX.Y.Z` のタグでリリースする。
+1. `rewse/actions` に composite action と `AGENTS.md`（インストール方法の例外）を追加し、`vX.Y.Z` のタグでリリースする。
 2. GitHub App を作成して 10 リポジトリにインストールし、各リポジトリの Dependabot secrets に 3 つの値を登録する。この手順は手作業で行う。
 3. 1 リポジトリで `dry-run: true` から試し、問題がなければ残りのリポジトリに caller を追加する。
 
