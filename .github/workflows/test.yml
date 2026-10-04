@@ -25,6 +25,10 @@ jobs:
 
       - run: tests/test_build_prompt.sh
 
+      - run: tests/test_check_status.sh
+
+      - run: tests/test_wait_checks.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
