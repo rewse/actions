@@ -21,6 +21,8 @@ jobs:
 
       - run: tests/test_semver_gate.sh
 
+      - run: tests/test_parse_verdict.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
