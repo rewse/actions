@@ -1,0 +1,250 @@
+name: Dependabot Review
+description: Rate the risk of a Dependabot PR with Kiro CLI and rebase-merge it when the risk is low and every other check passes.
+
+inputs:
+  app-client-id:
+    description: Client ID of the GitHub App that merges the PR.
+    required: true
+  app-private-key:
+    description: Private key of the GitHub App that merges the PR.
+    required: true
+  dry-run:
+    description: When true, rate and comment but never merge.
+    default: "false"
+  kiro-api-key:
+    description: Kiro API key for headless mode.
+    required: true
+  kiro-model:
+    description: Model for Kiro to use. Empty uses the Kiro default.
+    default: ""
+
+outputs:
+  outcome:
+    description: What happened to the PR, as written in the comment.
+    value: ${{ steps.final.outputs.outcome || steps.first.outputs.outcome }}
+  risk:
+    description: The risk rating, low, medium, or high.
+    value: ${{ steps.verdict.outputs.risk }}
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      with:
+        persist-credentials: false
+        ref: ${{ github.event.pull_request.head.sha }}
+
+    - name: Fetch Dependabot metadata
+      id: meta
+      uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98  # v3.1.0
+      with:
+        github-token: ${{ github.token }}
+
+    # Runs even when the metadata is missing, which the gate reports as a block.
+    - name: Check update types
+      id: gate
+      if: always()
+      shell: bash
+      env:
+        UPDATED_DEPENDENCIES_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
+      run: |
+        if reason=$("$GITHUB_ACTION_PATH/semver-gate.sh"); then
+          echo "gate=pass" >> "$GITHUB_OUTPUT"
+        else
+          echo "gate=block" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+        fi
+
+    # The official installer is allowed as an exception; see AGENTS.md.
+    - name: Install Kiro CLI
+      if: steps.gate.outputs.gate == 'pass'
+      shell: bash
+      run: |
+        curl -fsSL https://cli.kiro.dev/install | bash
+
+    - name: Build the prompt
+      if: steps.gate.outputs.gate == 'pass'
+      shell: bash
+      env:
+        GH_REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        UPDATED_DEPENDENCIES_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
+      run: |
+        printf '%s' "$UPDATED_DEPENDENCIES_JSON" > "$RUNNER_TEMP/metadata.json"
+        gh pr view "$PR" --json body --jq .body > "$RUNNER_TEMP/body.md"
+        gh pr diff "$PR" > "$RUNNER_TEMP/diff.patch"
+        "$GITHUB_ACTION_PATH/build-prompt.sh" "$RUNNER_TEMP/metadata.json" \
+          "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/diff.patch" > "$RUNNER_TEMP/prompt.md"
+
+    # The PR body and diff are untrusted, so Kiro gets read-only tools and no
+    # credential other than its own API key. The prompt goes in on stdin, since
+    # it can exceed the 128 KiB limit on a single argument.
+    - name: Rate the risk with Kiro
+      if: steps.gate.outputs.gate == 'pass'
+      shell: bash
+      env:
+        KIRO_API_KEY: ${{ inputs.kiro-api-key }}
+        KIRO_MODEL: ${{ inputs.kiro-model }}
+      run: |
+        args=(chat --no-interactive "--trust-tools=read,grep")
+        if [ -n "$KIRO_MODEL" ]; then
+          args+=(--model "$KIRO_MODEL")
+        fi
+        if ! timeout 600 "$HOME/.local/bin/kiro-cli" "${args[@]}" < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/kiro.out"; then
+          echo "::warning::Kiro CLI failed or timed out"
+          rm -f "$RUNNER_TEMP/kiro.out"
+        fi
+
+    # Anything short of a valid verdict counts as high risk.
+    - name: Decide the risk
+      id: verdict
+      if: always()
+      shell: bash
+      env:
+        GATE: ${{ steps.gate.outputs.gate }}
+        GATE_REASON: ${{ steps.gate.outputs.reason }}
+      run: |
+        out=$RUNNER_TEMP/verdict.json
+        evaluated=true
+        if [ "$GATE" != pass ]; then
+          jq -n --arg summary "${GATE_REASON:-Could not read Dependabot metadata}" \
+            '{risk: "high", summary: $summary, reasons: []}' > "$out"
+        elif ! { [ -f "$RUNNER_TEMP/kiro.out" ] &&
+          "$GITHUB_ACTION_PATH/parse-verdict.sh" < "$RUNNER_TEMP/kiro.out" > "$out"; }; then
+          evaluated=false
+          jq -n '{risk: "high", summary: "Kiro could not evaluate this PR.", reasons: []}' > "$out"
+        fi
+        cat "$out"
+        echo "risk=$(jq -r .risk "$out")" >> "$GITHUB_OUTPUT"
+        echo "evaluated=$evaluated" >> "$GITHUB_OUTPUT"
+
+    - name: Label the PR
+      if: always() && steps.verdict.outputs.risk != ''
+      shell: bash
+      env:
+        GH_REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        RISK: ${{ steps.verdict.outputs.risk }}
+      run: |
+        declare -A colors=([low]=0e8a16 [medium]=fbca04 [high]=d93f0b)
+        for level in low medium high; do
+          gh label create "risk:$level" --color "${colors[$level]}" --force
+          if [ "$level" = "$RISK" ]; then
+            gh api -X POST "repos/$GH_REPO/issues/$PR/labels" -f "labels[]=risk:$level" >/dev/null
+          else
+            # Removing a label the PR does not have returns 404.
+            gh api -X DELETE "repos/$GH_REPO/issues/$PR/labels/risk:$level" >/dev/null 2>&1 || true
+          fi
+        done
+
+    - name: Comment the verdict
+      id: first
+      if: always() && steps.verdict.outputs.risk != ''
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR: ${{ github.event.pull_request.number }}
+        RISK: ${{ steps.verdict.outputs.risk }}
+      run: |
+        if [ "$RISK" = low ]; then
+          outcome="Waiting for CI."
+        else
+          outcome="Left for manual review."
+        fi
+        echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+        "$GITHUB_ACTION_PATH/render-comment.sh" "$RUNNER_TEMP/verdict.json" "$HEAD_SHA" "$outcome" > "$RUNNER_TEMP/comment.md"
+        "$GITHUB_ACTION_PATH/upsert-comment.sh" "$PR" "$RUNNER_TEMP/comment.md"
+
+    - name: Wait for the other checks
+      id: ci
+      if: steps.verdict.outputs.risk == 'low'
+      shell: bash
+      env:
+        GH_REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+        OWN_WORKFLOW: ${{ github.workflow }}
+        PR: ${{ github.event.pull_request.number }}
+      run: echo "ci=$("$GITHUB_ACTION_PATH/wait-checks.sh" "$PR")" >> "$GITHUB_OUTPUT"
+
+    # The App token, unlike GITHUB_TOKEN, makes the merge push start the
+    # workflows on the default branch.
+    - name: Create the merge token
+      id: token
+      if: steps.ci.outputs.ci == 'pass' && inputs.dry-run != 'true'
+      uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+      with:
+        client-id: ${{ inputs.app-client-id }}
+        permission-contents: write
+        permission-pull-requests: write
+        private-key: ${{ inputs.app-private-key }}
+
+    # --match-head-commit refuses to merge commits pushed after the rating.
+    - name: Merge the PR
+      id: merge
+      if: steps.token.outcome == 'success'
+      shell: bash
+      env:
+        GH_REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ steps.token.outputs.token }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        if err=$(gh pr merge "$PR" --rebase --match-head-commit "$HEAD_SHA" 2>&1 >/dev/null); then
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "$err" >&2
+          echo "merged=false" >> "$GITHUB_OUTPUT"
+          echo "error=$(head -n 1 <<<"$err")" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Report the outcome
+      id: final
+      if: always() && steps.verdict.outputs.risk == 'low'
+      shell: bash
+      env:
+        CI: ${{ steps.ci.outputs.ci }}
+        DRY_RUN: ${{ inputs.dry-run }}
+        GH_TOKEN: ${{ github.token }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        MERGE_ERROR: ${{ steps.merge.outputs.error }}
+        MERGED: ${{ steps.merge.outputs.merged }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |
+        case "$MERGED:$CI" in
+          true:*) outcome="Merged with rebase." ;;
+          false:*) outcome="Merge failed: $MERGE_ERROR" ;;
+          *:fail) outcome="Not merged: a check failed." ;;
+          *:none) outcome="Not merged: no other checks ran." ;;
+          *:timeout) outcome="Not merged: the checks did not finish within 30 minutes." ;;
+          *:pass)
+            if [ "$DRY_RUN" = true ]; then
+              outcome="Dry run: not merged."
+            else
+              outcome="Not merged: could not create the merge token."
+            fi
+            ;;
+          *) outcome="Not merged: could not wait for the checks." ;;
+        esac
+        echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
+        "$GITHUB_ACTION_PATH/render-comment.sh" "$RUNNER_TEMP/verdict.json" "$HEAD_SHA" "$outcome" > "$RUNNER_TEMP/comment.md"
+        "$GITHUB_ACTION_PATH/upsert-comment.sh" "$PR" "$RUNNER_TEMP/comment.md"
+
+    - name: Fail on errors
+      if: always()
+      shell: bash
+      env:
+        EVALUATED: ${{ steps.verdict.outputs.evaluated }}
+        MERGED: ${{ steps.merge.outputs.merged }}
+      run: |
+        if [ "$EVALUATED" = false ]; then
+          echo "::error::Kiro could not evaluate this PR"
+          exit 1
+        fi
+        if [ "$MERGED" = false ]; then
+          echo "::error::The merge failed"
+          exit 1
+        fi
