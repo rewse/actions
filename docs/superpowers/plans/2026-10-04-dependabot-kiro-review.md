@@ -346,6 +346,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
+      actions: read
       checks: read
       contents: read
       issues: write

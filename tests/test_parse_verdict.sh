@@ -10,7 +10,7 @@ failures=0
 expect() {
   local name=$1 want=$2 input=$3
   local got
-  if ! got=$("$script" <<<"$input" 2>/dev/null); then
+  if ! got=$(FORBIDDEN_TEXT=sk-SECRET-123 "$script" <<<"$input" 2>/dev/null); then
     got=FAIL
   fi
   if [ "$got" = "$want" ]; then
@@ -32,5 +32,18 @@ expect rejects_unknown_risk FAIL '{"risk":"none","summary":"s","reasons":[]}'
 expect rejects_non_string_reasons FAIL '{"risk":"low","summary":"s","reasons":[1]}'
 expect rejects_missing_summary FAIL '{"risk":"low","reasons":[]}'
 expect rejects_empty FAIL ''
+expect rejects_valid_then_malformed_last_line FAIL "$v"$'\n''{"risk":"high","summary":"has "quote"","reasons":[]}'
+expect rejects_leaked_key FAIL '{"risk":"low","summary":"key is sk-SECRET-123","reasons":[]}'
+expect rejects_leaked_key_in_reasons FAIL '{"risk":"low","summary":"s","reasons":["x sk-SECRET-123 y"]}'
+long=$(head -c 600 /dev/zero | tr '\0' x)
+got=$(jq -cn --arg l "$long" '{risk: "low", summary: $l, reasons: [range(12) | $l]}' \
+  | FORBIDDEN_TEXT=sk-SECRET-123 "$script" \
+  | jq -c '[(.summary | length), (.reasons | length), (.reasons | map(length) | max)]')
+if [ "$got" = "[500,10,500]" ]; then
+  echo "ok   caps_lengths"
+else
+  echo "FAIL caps_lengths: want [500,10,500], got $got"
+  failures=$((failures + 1))
+fi
 
 exit $((failures > 0))

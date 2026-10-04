@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Prints the Kiro prompt for a Dependabot PR: the fixed instructions in
 # prompt.md followed by the metadata, PR body, and diff, each in its own tag.
-# Closing tags inside the inputs are escaped so the text cannot leave its tag.
+# Every < in the inputs is escaped as &lt;, so no spelling of a closing tag
+# lets the text leave its tag.
 #
 # Usage: build-prompt.sh <metadata.json> <body.md> <diff.patch>
 set -euo pipefail
@@ -10,7 +11,7 @@ max_diff_bytes=204800
 dir=$(dirname "$0")
 
 escape() {
-  sed -e 's#</untrusted-#<\\/untrusted-#g' -e 's#</dependabot-metadata#<\\/dependabot-metadata#g' "$@"
+  sed 's/</\&lt;/g' "$@"
 }
 
 diff_bytes=$(wc -c < "$3" | tr -d ' ')

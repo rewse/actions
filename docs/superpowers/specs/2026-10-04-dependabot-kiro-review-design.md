@@ -48,7 +48,7 @@ flowchart TD
 
 GitHub App は `rewse` アカウントで 1 つ作り、対象の 10 リポジトリにインストールする。App の権限は Contents: write、Pull requests: write、Metadata: read に限る。App のトークンはマージだけに使う。
 
-caller の最上位 `permissions` は `contents: read` とし、評価ジョブには `pull-requests: write`（コメントとラベル付け）、`issues: write`（ラベルの作成）、`checks: read` と `statuses: read`（CI の待機）だけを追加する。`GITHUB_TOKEN` には `contents: write` を渡さない。
+caller の最上位 `permissions` は `contents: read` とし、評価ジョブには `pull-requests: write`（コメントとラベル付け）、`issues: write`（ラベルの作成）、`actions: read`、`checks: read`、`statuses: read`（CI とワークフロー実行の待機）だけを追加する。`GITHUB_TOKEN` には `contents: write` を渡さない。
 
 ## リスク評価
 

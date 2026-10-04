@@ -29,7 +29,7 @@ Rates the risk of a Dependabot PR with [Kiro CLI](https://kiro.dev/docs/cli/head
 - Kiro rates the risk low after reading the changelog, the diff, and how the repository uses the dependency.
 - Every check outside the calling workflow passes within 30 minutes.
 
-The action posts its rating as one PR comment, updated on each run, and labels the PR `risk:low`, `risk:medium`, or `risk:high`. Kiro runs with the read and grep tools only and receives no credential besides its API key, because the PR body and diff come from upstream. The merge uses a GitHub App token so that the push to the default branch starts its workflows, which a merge with `GITHUB_TOKEN` would not.
+The action posts its rating as one PR comment, updated on each run, and labels the PR `risk:low`, `risk:medium`, or `risk:high`. Kiro runs with the read and grep tools only and receives no credential besides its API key, because the PR body and diff come from upstream. Those tools can read files outside the workspace, so the action discards a verdict that quotes the API key and caps the length of what it posts. The merge uses a GitHub App token so that the push to the default branch starts its workflows, which a merge with `GITHUB_TOKEN` would not.
 
 ```yaml
 name: Dependabot Review
@@ -52,6 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
+      actions: read
       checks: read
       contents: read
       issues: write
