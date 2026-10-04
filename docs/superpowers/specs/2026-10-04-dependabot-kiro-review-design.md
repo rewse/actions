@@ -11,7 +11,7 @@
 - `GITHUB_TOKEN` でマージした push は後続のワークフローを起動しない。マージ後に `gitleaks.yml` や push トリガーのワークフローを動かすため、マージには GitHub App のトークンを使う。
 - Dependabot が起動したワークフローは Actions secrets を読めず、Dependabot secrets だけを参照できる。`rewse` は個人アカウントで org の共有 secret がないため、各リポジトリの Dependabot secrets に登録する。
 - Kiro CLI の headless mode は `KIRO_API_KEY` 環境変数で認証し、`kiro-cli chat --no-interactive --trust-tools=...` で実行する。API キーは Pro / Pro+ / Power プランで発行できる。
-- 公式のインストール方法は `curl -fsSL ... | bash` だが、ブランチ上のインストーラを `sh` に流し込むことは `~/git/AGENTS.md` で禁じられている。バージョンを固定した配布物を SHA256 で検証してインストールする。
+- Kiro CLI は公式のインストール方法（`curl -fsSL https://cli.kiro.dev/install | bash`）で入れる。インストーラを `sh` に流し込むことは `~/git/AGENTS.md` で禁じられているが、Kiro CLI に限り例外として許可されている。この例外と理由は `rewse/actions` の `AGENTS.md` に記録する。
 - `.github` は `~/git/AGENTS.md` の GitHub Configuration に従う。`uses:` はフル SHA と `# vX.Y.Z` で固定し、最上位の `permissions` を `contents: read` にし、checkout には `persist-credentials: false` を付け、全ジョブに `name` を付ける。
 
 ## 全体構成
@@ -30,10 +30,7 @@ flowchart TD
   G -->|失敗 / タイムアウト / チェックなし| Z[コメント → 終了]
 ```
 
-`rewse/actions` に置く部品は次の 2 つ。
-
-- `.github/workflows/dependabot-review.yml`: reusable workflow（`on: workflow_call`）。判定、コメント、マージをすべて担う。プロンプトと判定ロジックはここにだけ置き、各リポジトリはタグを打った SHA で参照する。参照の更新は各リポジトリの Dependabot `github-actions` エントリが担い、`rewse/*` は cooldown の対象外なので遅れない。
-- `setup-kiro-cli/`: composite action。固定バージョンの Kiro CLI を取得して SHA256 を検証し、`PATH` に追加する。
+`rewse/actions` には reusable workflow `.github/workflows/dependabot-review.yml`（`on: workflow_call`）を置く。判定、コメント、マージ、Kiro CLI のインストールをすべて担う。プロンプトと判定ロジックはここにだけ置き、各リポジトリはタグを打った SHA で参照する。参照の更新は各リポジトリの Dependabot `github-actions` エントリが担い、`rewse/*` は cooldown の対象外なので遅れない。
 
 各リポジトリには caller として `.github/workflows/dependabot-review.yml` を置く。`pull_request`（`opened`, `synchronize`, `reopened`）で起動し、`github.actor == 'dependabot[bot]'` のときだけ reusable workflow を呼ぶ。`pull_request_target` は使わない。
 
@@ -143,11 +140,10 @@ low 判定のあと、次の順に実行する。
 
 ## 展開手順
 
-1. `rewse/actions` に `setup-kiro-cli` と reusable workflow を追加し、`vX.Y.Z` のタグでリリースする。
+1. `rewse/actions` に reusable workflow と `AGENTS.md`（インストール方法の例外）を追加し、`vX.Y.Z` のタグでリリースする。
 2. GitHub App を作成して 10 リポジトリにインストールし、各リポジトリの Dependabot secrets に 3 つの値を登録する。この手順は手作業で行う。
 3. 1 リポジトリで `dry-run: true` から試し、問題がなければ残りのリポジトリに caller を追加する。
 
 ## 計画段階で確定させること
 
-- Kiro CLI の Linux 向け配布物の URL と、バージョン固定・SHA256 検証の方法
 - `kiro-cli chat --no-interactive` の出力から最終応答を取り出す方法（標準出力の形式、装飾の有無）
