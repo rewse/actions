@@ -23,6 +23,8 @@ jobs:
 
       - run: tests/test_parse_verdict.sh
 
+      - run: tests/test_build_prompt.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
