@@ -42,13 +42,13 @@ flowchart TD
 
 | 名前 | 用途 |
 |---|---|
-| `DEPENDABOT_APP_ID` | マージ用 GitHub App の App ID |
+| `DEPENDABOT_APP_CLIENT_ID` | マージ用 GitHub App の Client ID（`actions/create-github-app-token` は `app-id` を非推奨にしている） |
 | `DEPENDABOT_APP_PRIVATE_KEY` | 同 App の秘密鍵 |
 | `KIRO_API_KEY` | Kiro CLI headless mode の API キー |
 
-GitHub App は `rewse` アカウントで 1 つ作り、対象の 10 リポジトリにインストールする。App の権限は Contents: write、Pull requests: write、Checks: read、Metadata: read に限る。
+GitHub App は `rewse` アカウントで 1 つ作り、対象の 10 リポジトリにインストールする。App の権限は Contents: write、Pull requests: write、Metadata: read に限る。App のトークンはマージだけに使う。
 
-caller と reusable workflow の最上位 `permissions` は `contents: read` とし、評価ジョブには `pull-requests: write`（コメントとラベル用）だけを追加する。`GITHUB_TOKEN` には `contents: write` を渡さない。
+caller と reusable workflow の最上位 `permissions` は `contents: read` とし、評価ジョブには `pull-requests: write`（コメントとラベル付け）、`issues: write`（ラベルの作成）、`checks: read` と `statuses: read`（CI の待機）だけを追加する。`GITHUB_TOKEN` には `contents: write` を渡さない。
 
 ## リスク評価
 
@@ -102,10 +102,9 @@ PR 本文と changelog は上流のメンテナが書いた文章で、悪意あ
 
 low 判定のあと、次の順に実行する。
 
-1. `actions/create-github-app-token` で、呼び出し元リポジトリだけに絞ったトークンを発行する。
-2. `gh pr checks --json` で PR のチェックを 30 秒ごとに取得し、自分のワークフローのチェックを除いたすべてが完了するまで待つ。`gh pr checks --watch` は実行中の自分自身も待って終わらないため使わない。待つのは最大 30 分。
-3. 自分以外のチェックが 1 件もなければマージしない。どのリポジトリにも PR で走る `gitleaks.yml` があるので、通常この条件には当たらない。
-4. 完了したチェックの結論がすべて `success`、`skipped`、`neutral` のいずれかであれば、`gh pr merge --rebase --match-head-commit <評価した SHA>` を実行する。評価後に新しい push があった場合はマージが失敗し、その push で起動した実行に判断を任せる。
+1. `GITHUB_TOKEN` を使い、`gh pr checks --json` で PR のチェックを 30 秒ごとに取得して、自分のワークフローのチェックを除いたすべてが完了するまで待つ。`gh pr checks --watch` は実行中の自分自身も待って終わらないため使わない。待つのは最大 30 分。
+2. 自分以外のチェックが 1 件もなければマージしない。どのリポジトリにも PR で走る `gitleaks.yml` があるので、通常この条件には当たらない。
+3. 完了したチェックの結論がすべて `success`、`skipped`、`neutral` のいずれかであれば、`actions/create-github-app-token` で呼び出し元リポジトリだけに絞ったトークンを発行し、`gh pr merge --rebase --match-head-commit <評価した SHA>` を実行する。評価後に新しい push があった場合はマージが失敗し、その push で起動した実行に判断を任せる。
 
 ## コメントとラベル
 
