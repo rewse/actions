@@ -2,25 +2,6 @@
 
 GitHub Actions shared by the [rewse](https://github.com/rewse) repositories.
 
-## setup-safe-chain
-
-Installs [Aikido Safe Chain](https://github.com/AikidoSec/safe-chain) from the newest release that is published, stable, immutable, and at least `cooldown-hours` old. The installer comes from that release's assets, so the binary is checked against the SHA256 embedded in it, and a new Safe Chain release is picked up on its own once the cooldown passes.
-
-```yaml
-- name: Setup Aikido Safe Chain
-  uses: rewse/actions/setup-safe-chain@<commit SHA>  # vX.Y.Z
-```
-
-| Input | Default | Description |
-|---|---|---|
-| `cooldown-hours` | `96` | Minimum age in hours of the release to install |
-
-| Output | Description |
-|---|---|
-| `version` | The installed Safe Chain version |
-
-The step fails when no release meets the conditions or when the GitHub API cannot be reached.
-
 ## dependabot-review
 
 Rates the risk of a Dependabot PR with [Kiro CLI](https://kiro.dev/docs/cli/headless) in headless mode and rebase-merges the PR when every condition holds:
@@ -81,6 +62,25 @@ jobs:
 | `risk` | The risk rating: `low`, `medium`, or `high` |
 
 Workflows started by Dependabot read only Dependabot secrets, so register `DEPENDABOT_APP_CLIENT_ID`, `DEPENDABOT_APP_PRIVATE_KEY`, and `KIRO_API_KEY` under Settings → Secrets and variables → Dependabot in each repository. The App needs Contents: Read and write, Pull requests: Read and write, and Metadata: Read-only, and must be installed on the repository. Kiro API keys require a Kiro Pro, Pro+, or Power subscription.
+
+## setup-safe-chain
+
+Installs [Aikido Safe Chain](https://github.com/AikidoSec/safe-chain) from the newest release that is published, stable, immutable, and at least `cooldown-hours` old. The installer comes from that release's assets, so the binary is checked against the SHA256 embedded in it, and a new Safe Chain release is picked up on its own once the cooldown passes.
+
+```yaml
+- name: Setup Aikido Safe Chain
+  uses: rewse/actions/setup-safe-chain@<commit SHA>  # vX.Y.Z
+```
+
+| Input | Default | Description |
+|---|---|---|
+| `cooldown-hours` | `96` | Minimum age in hours of the release to install |
+
+| Output | Description |
+|---|---|
+| `version` | The installed Safe Chain version |
+
+The step fails when no release meets the conditions or when the GitHub API cannot be reached.
 
 ## Development
 
