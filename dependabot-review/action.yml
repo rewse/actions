@@ -42,9 +42,11 @@ runs:
         github-token: ${{ github.token }}
 
     # Runs even when the metadata is missing, which the gate reports as a block.
+    # Steps use !cancelled() rather than always(), so a run that concurrency
+    # cancels for a newer push does not report on the old commit.
     - name: Check update types
       id: gate
-      if: always()
+      if: ${{ !cancelled() }}
       shell: bash
       env:
         UPDATED_DEPENDENCIES_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
@@ -100,9 +102,11 @@ runs:
     # Anything short of a valid verdict counts as high risk.
     - name: Decide the risk
       id: verdict
-      if: always()
+      if: ${{ !cancelled() }}
       shell: bash
       env:
+        # A verdict that quotes the API key is discarded rather than posted.
+        FORBIDDEN_TEXT: ${{ inputs.kiro-api-key }}
         GATE: ${{ steps.gate.outputs.gate }}
         GATE_REASON: ${{ steps.gate.outputs.reason }}
       run: |
@@ -121,7 +125,7 @@ runs:
         echo "evaluated=$evaluated" >> "$GITHUB_OUTPUT"
 
     - name: Label the PR
-      if: always() && steps.verdict.outputs.risk != ''
+      if: ${{ !cancelled() && steps.verdict.outputs.risk != '' }}
       shell: bash
       env:
         GH_REPO: ${{ github.repository }}
@@ -142,7 +146,7 @@ runs:
 
     - name: Comment the verdict
       id: first
-      if: always() && steps.verdict.outputs.risk != ''
+      if: ${{ !cancelled() && steps.verdict.outputs.risk != '' }}
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
@@ -166,6 +170,7 @@ runs:
       env:
         GH_REPO: ${{ github.repository }}
         GH_TOKEN: ${{ github.token }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         OWN_WORKFLOW: ${{ github.workflow }}
         PR: ${{ github.event.pull_request.number }}
       run: echo "ci=$("$GITHUB_ACTION_PATH/wait-checks.sh" "$PR")" >> "$GITHUB_OUTPUT"
@@ -203,7 +208,7 @@ runs:
 
     - name: Report the outcome
       id: final
-      if: always() && steps.verdict.outputs.risk == 'low'
+      if: ${{ !cancelled() && steps.verdict.outputs.risk == 'low' }}
       shell: bash
       env:
         CI: ${{ steps.ci.outputs.ci }}
@@ -234,7 +239,7 @@ runs:
         "$GITHUB_ACTION_PATH/upsert-comment.sh" "$PR" "$RUNNER_TEMP/comment.md"
 
     - name: Fail on errors
-      if: always()
+      if: ${{ !cancelled() }}
       shell: bash
       env:
         EVALUATED: ${{ steps.verdict.outputs.evaluated }}
