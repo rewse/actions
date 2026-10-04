@@ -29,6 +29,8 @@ jobs:
 
       - run: tests/test_wait_checks.sh
 
+      - run: tests/test_render_comment.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
