@@ -342,7 +342,7 @@ concurrency:
 jobs:
   review:
     name: Review
-    if: github.actor == 'dependabot[bot]'
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 50
     permissions:
