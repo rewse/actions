@@ -32,7 +32,7 @@ flowchart TD
 
 `rewse/actions` には composite action `dependabot-review/` を置く。checkout、判定、コメント、マージ、Kiro CLI のインストールをすべて担う。reusable workflow ではなく composite action にするのは、`$GITHUB_ACTION_PATH` で同梱のスクリプトを参照できるからで、reusable workflow からは自分自身のリポジトリのファイルを固定した SHA で読む手段がない。プロンプトと判定ロジックはここにだけ置き、各リポジトリはタグを打った SHA で参照する。参照の更新は各リポジトリの Dependabot `github-actions` エントリが担い、`rewse/*` は cooldown の対象外なので遅れない。
 
-各リポジトリには caller として `.github/workflows/dependabot-review.yml` を置く。`pull_request`（`opened`, `synchronize`, `reopened`）で起動し、`github.actor == 'dependabot[bot]'` のときだけ評価ジョブを動かし、ジョブの `permissions` と secrets の受け渡しを受け持つ。`pull_request_target` は使わない。
+各リポジトリには caller として `.github/workflows/dependabot-review.yml` を置く。`pull_request`（`opened`, `synchronize`, `reopened`）で起動し、PR の作成者が `dependabot[bot]`（`github.event.pull_request.user.login`）のときだけ評価ジョブを動かし、ジョブの `permissions` と secrets の受け渡しを受け持つ。`pull_request_target` は使わない。
 
 `concurrency` は PR 番号単位にして `cancel-in-progress: true` とする。Dependabot が rebase で push し直したら古い実行を止め、新しい head で評価し直す。
 
