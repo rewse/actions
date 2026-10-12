@@ -59,9 +59,11 @@ jobs:
 | Output | Description |
 |---|---|
 | `outcome` | What happened to the PR, as written in the comment |
-| `risk` | The risk rating: `low`, `medium`, or `high` |
+| `risk` | The risk rating: `low`, `medium`, or `high`, or `skipped` when someone other than Dependabot started the run |
 
 Workflows started by Dependabot read only Dependabot secrets, so register `DEPENDABOT_APP_CLIENT_ID`, `DEPENDABOT_APP_PRIVATE_KEY`, and `KIRO_API_KEY` under Settings → Secrets and variables → Dependabot in each repository. The App needs Contents: Read and write, Pull requests: Read and write, and Metadata: Read-only, and must be installed on the repository. Kiro API keys require a Kiro Pro, Pro+, or Power subscription.
+
+A push by anyone else to a Dependabot PR starts a run that reads Actions secrets, so `kiro-api-key` is empty. The action then skips Kiro, removes the risk labels, posts `Risk: skipped`, and leaves the PR for manual review without failing. An empty key in a run that Dependabot started is a misconfiguration and fails the job.
 
 ## setup-safe-chain
 
