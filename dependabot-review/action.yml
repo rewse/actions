@@ -23,7 +23,7 @@ outputs:
     description: What happened to the PR, as written in the comment.
     value: ${{ steps.final.outputs.outcome || steps.first.outputs.outcome }}
   risk:
-    description: The risk rating, low, medium, or high.
+    description: The risk rating, low, medium, or high, or skipped when someone other than Dependabot started the run.
     value: ${{ steps.verdict.outputs.risk }}
 
 runs:
@@ -60,13 +60,13 @@ runs:
 
     # The official installer is allowed as an exception; see AGENTS.md.
     - name: Install Kiro CLI
-      if: steps.gate.outputs.gate == 'pass'
+      if: steps.gate.outputs.gate == 'pass' && inputs.kiro-api-key != ''
       shell: bash
       run: |
         curl -fsSL https://cli.kiro.dev/install | bash
 
     - name: Build the prompt
-      if: steps.gate.outputs.gate == 'pass'
+      if: steps.gate.outputs.gate == 'pass' && inputs.kiro-api-key != ''
       shell: bash
       env:
         GH_REPO: ${{ github.repository }}
@@ -84,7 +84,7 @@ runs:
     # credential other than its own API key. The prompt goes in on stdin, since
     # it can exceed the 128 KiB limit on a single argument.
     - name: Rate the risk with Kiro
-      if: steps.gate.outputs.gate == 'pass'
+      if: steps.gate.outputs.gate == 'pass' && inputs.kiro-api-key != ''
       shell: bash
       env:
         KIRO_API_KEY: ${{ inputs.kiro-api-key }}
@@ -99,22 +99,34 @@ runs:
           rm -f "$RUNNER_TEMP/kiro.out"
         fi
 
-    # Anything short of a valid verdict counts as high risk.
+    # Anything short of a valid verdict counts as high risk, except a run that a
+    # push by someone other than Dependabot started. Such a run reads Actions
+    # secrets instead of Dependabot secrets, so the key is empty by design and
+    # the PR is left unrated for manual review rather than failed as high.
     - name: Decide the risk
       id: verdict
       if: ${{ !cancelled() }}
       shell: bash
       env:
+        ACTOR: ${{ github.actor }}
         # A verdict that quotes the API key is discarded rather than posted.
         FORBIDDEN_TEXT: ${{ inputs.kiro-api-key }}
         GATE: ${{ steps.gate.outputs.gate }}
         GATE_REASON: ${{ steps.gate.outputs.reason }}
+        KEY_SET: ${{ inputs.kiro-api-key != '' }}
       run: |
         out=$RUNNER_TEMP/verdict.json
         evaluated=true
         if [ "$GATE" != pass ]; then
           jq -n --arg summary "${GATE_REASON:-Could not read Dependabot metadata}" \
             '{risk: "high", summary: $summary, reasons: []}' > "$out"
+        elif [ "$KEY_SET" != true ] && [ "$ACTOR" != 'dependabot[bot]' ]; then
+          jq -n --arg actor "$ACTOR" \
+            '{risk: "skipped", summary: "Kiro did not rate this PR: \($actor) started this run, so it has no Dependabot secrets.", reasons: []}' > "$out"
+        elif [ "$KEY_SET" != true ]; then
+          echo "::error::The kiro-api-key input is empty; register KIRO_API_KEY as a Dependabot secret"
+          evaluated=false
+          jq -n '{risk: "high", summary: "Kiro could not evaluate this PR: no API key.", reasons: []}' > "$out"
         elif ! { [ -f "$RUNNER_TEMP/kiro.out" ] &&
           "$GITHUB_ACTION_PATH/parse-verdict.sh" < "$RUNNER_TEMP/kiro.out" > "$out"; }; then
           evaluated=false
