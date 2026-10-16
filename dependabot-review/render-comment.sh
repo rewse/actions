@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Prints the Markdown review comment for a verdict. The first line is the
-# marker that upsert-comment.sh looks for; HTML comments in the verdict and
+# Prints the Markdown review comment for a verdict. The first line is a marker
+# that identifies the action's comments; HTML comments in the verdict and
 # outcome are escaped so they cannot hide text or forge the marker.
 #
 # Usage: render-comment.sh <verdict.json> <head-sha> <outcome>

@@ -173,7 +173,8 @@ runs:
         fi
         echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
         "$GITHUB_ACTION_PATH/render-comment.sh" "$RUNNER_TEMP/verdict.json" "$HEAD_SHA" "$outcome" > "$RUNNER_TEMP/comment.md"
-        "$GITHUB_ACTION_PATH/upsert-comment.sh" "$PR" "$RUNNER_TEMP/comment.md"
+        id=$("$GITHUB_ACTION_PATH/post-comment.sh" "$PR" "$RUNNER_TEMP/comment.md")
+        echo "comment-id=$id" >> "$GITHUB_OUTPUT"
 
     - name: Wait for the other checks
       id: ci
@@ -224,6 +225,7 @@ runs:
       shell: bash
       env:
         CI: ${{ steps.ci.outputs.ci }}
+        COMMENT_ID: ${{ steps.first.outputs.comment-id }}
         DRY_RUN: ${{ inputs.dry-run }}
         GH_TOKEN: ${{ github.token }}
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -248,7 +250,7 @@ runs:
         esac
         echo "outcome=$outcome" >> "$GITHUB_OUTPUT"
         "$GITHUB_ACTION_PATH/render-comment.sh" "$RUNNER_TEMP/verdict.json" "$HEAD_SHA" "$outcome" > "$RUNNER_TEMP/comment.md"
-        "$GITHUB_ACTION_PATH/upsert-comment.sh" "$PR" "$RUNNER_TEMP/comment.md"
+        "$GITHUB_ACTION_PATH/post-comment.sh" "$PR" "$RUNNER_TEMP/comment.md" "$COMMENT_ID" > /dev/null
 
     - name: Fail on errors
       if: ${{ !cancelled() }}
