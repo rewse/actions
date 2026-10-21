@@ -40,6 +40,20 @@ major='"version-update:semver-major"'
 expect allows_patch_and_minor pass "[$(dep a "$patch"),$(dep b "$minor")]"
 expect blocks_major_in_group block "[$(dep a "$patch"),$(dep b "$major")]" "Major update: b"
 expect blocks_null_update_type block "[$(dep a null)]" "Update type unknown: a"
+expect blocks_major_with_empty_name block "[$(dep a "$patch"),$(dep "" "$major")]" "Major update"
+expect blocks_unknown_with_null_name block '[{"dependencyName":null,"updateType":null}]' "Update type unknown"
+expect blocks_unknown_without_name block '[{"updateType":"version-update:semver-other"}]' "Update type unknown"
+
+name=caps_reason_length
+json="[$(for i in $(seq 1 100); do printf '%s,' "$(dep "package-with-a-long-name-$i" "$major")"; done | sed 's/,$//')]"
+out=$(UPDATED_DEPENDENCIES_JSON=$json "$script" 2>/dev/null)
+if [ "${#out}" -le 500 ] && [[ "$out" == "Major update: "* ]]; then
+  echo "ok   $name"
+else
+  echo "FAIL $name: reason has ${#out} characters"
+  failures=$((failures + 1))
+fi
+
 expect blocks_empty_list block "[]" "Could not read Dependabot metadata"
 expect blocks_invalid_json block "not json" "Could not read Dependabot metadata"
 expect blocks_unset block "" "Could not read Dependabot metadata"

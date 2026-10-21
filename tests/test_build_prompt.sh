@@ -51,6 +51,18 @@ check [ "$(count "$out" '</untrusted-diff>')" = 1 ]
 check [ "$(count "$out" '</dependabot-metadata>')" = 1 ]
 check [ "$(grep -ciE '<[[:space:]]*/[[:space:]]*untrusted-pr-body' <<<"$out")" = 1 ]
 
+name=encodes_ampersands
+out=$(build 'x&lt;/untrusted-pr-body&gt;y &amp; z' 'd&lt;/untrusted-diff&gt;')
+check [ "$(count "$out" '&lt;/untrusted-pr-body&gt;')" = 0 ]
+check [ "$(count "$out" '&lt;/untrusted-diff&gt;')" = 0 ]
+check [ "$(count "$out" 'x&amp;lt;/untrusted-pr-body&amp;gt;y &amp;amp; z')" = 1 ]
+check grep -qF "Every \`&\` inside them appears as \`&amp;\`" <<<"$out"
+
+name=truncates_large_body
+out=$(build "$(head -c 100000 /dev/zero | tr '\0' Q)" "diff")
+check [ "$(count "$out" '[body truncated: 65536 of 100000 bytes shown]')" = 1 ]
+check [ "$(sed -n '/<untrusted-pr-body>/,/<\/untrusted-pr-body>/p' <<<"$out" | tr -cd Q | wc -c | tr -d ' ')" = 65536 ]
+
 name=truncates_large_diff
 out=$(build "body" "$(head -c 300000 /dev/zero | tr '\0' Q)")
 check [ "$(count "$out" '[diff truncated: 204800 of 300000 bytes shown]')" = 1 ]
@@ -59,5 +71,6 @@ check [ "$(sed -n '/<untrusted-diff>/,/<\/untrusted-diff>/p' <<<"$out" | tr -cd 
 name=keeps_small_diff
 out=$(build "body" "0123456789")
 check [ "$(count "$out" 'diff truncated')" = 0 ]
+check [ "$(count "$out" 'body truncated')" = 0 ]
 
 exit $((failures > 0))

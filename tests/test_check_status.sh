@@ -28,6 +28,8 @@ expect all_pass pass "[$(c lint Lint pass),$(c t Test skipping),$(c Review 'Depe
 expect any_pending pending "[$(c lint Lint pass),$(c t Test pending)]"
 expect fail_wins_over_pending fail "[$(c lint Lint fail),$(c t Test pending)]"
 expect cancel_counts_as_fail fail "[$(c lint Lint cancel)]"
+expect unknown_bucket_fails fail "[$(c lint Lint pass),$(c t Test neutral)]"
+expect empty_bucket_fails fail "[$(c lint Lint '')]"
 expect empty_is_none none "[]"
 
 exit $((failures > 0))

@@ -63,7 +63,9 @@ jobs:
 
 Workflows started by Dependabot read only Dependabot secrets, so register `DEPENDABOT_APP_CLIENT_ID`, `DEPENDABOT_APP_PRIVATE_KEY`, and `KIRO_API_KEY` under Settings → Secrets and variables → Dependabot in each repository. The App needs Contents: Read and write, Pull requests: Read and write, and Metadata: Read-only, and must be installed on the repository. Kiro API keys require a Kiro Pro, Pro+, or Power subscription.
 
-A push by anyone else to a Dependabot PR starts a run that reads Actions secrets, so `kiro-api-key` is empty. The action then skips Kiro, removes the risk labels, posts `Risk: skipped`, and leaves the PR for manual review without failing. An empty key in a run that Dependabot started is a misconfiguration and fails the job.
+The action rates and merges only when Dependabot opened the PR and started the run, whatever the caller's job condition says. A push by anyone else to a Dependabot PR, or a PR that someone else opened, makes the action skip Kiro, remove the risk labels, post `Risk: skipped`, and leave the PR for manual review without failing. An empty key in a run that Dependabot started is a misconfiguration and fails the job.
+
+The App private key and the Kiro API key have no expiry. Rotate them when someone who could read them leaves or when a leak is suspected: generate a new App private key and delete the old one in the App settings, issue a new Kiro API key and revoke the old one, then update the Dependabot secrets in every repository.
 
 ## setup-safe-chain
 

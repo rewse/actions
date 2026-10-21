@@ -12,21 +12,23 @@ if ! jq -e 'type == "array" and length > 0' >/dev/null 2>&1 <<<"$json"; then
   exit 1
 fi
 
-names() {
-  jq -r --arg filter "$1" '
-    [.[] | select(.updateType | tostring | test($filter)) | .dependencyName]
-    | join(", ")
-  ' <<<"$json"
+# block <label> <updateType regex>: exits 1 with the reason when any element
+# matches. Presence decides the result, so an element with an empty or missing
+# name still blocks. The reason is capped because it is posted publicly.
+block() {
+  local names
+  if jq -e --arg filter "$2" \
+    'any(.[]; .updateType | tostring | test($filter))' >/dev/null <<<"$json"; then
+    names=$(jq -r --arg filter "$2" '
+      [.[] | select(.updateType | tostring | test($filter))
+        | (.dependencyName // "" | tostring) | if . == "" then "(unnamed)" else . end]
+      | join(", ")
+    ' <<<"$json")
+    reason="$1: $names"
+    echo "${reason:0:500}"
+    exit 1
+  fi
 }
 
-major=$(names '^version-update:semver-major$')
-if [ -n "$major" ]; then
-  echo "Major update: $major"
-  exit 1
-fi
-
-unknown=$(names '^(?!version-update:semver-(patch|minor)$)')
-if [ -n "$unknown" ]; then
-  echo "Update type unknown: $unknown"
-  exit 1
-fi
+block "Major update" '^version-update:semver-major$'
+block "Update type unknown" '^(?!version-update:semver-(patch|minor)$)'

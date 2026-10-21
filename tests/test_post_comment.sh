@@ -50,4 +50,14 @@ name=empty_id_posts_new_comment
 run 7 "$fixtures/body.md" "" > /dev/null
 check grep -qxF POST "$fixtures/args"
 
+name=rejects_non_numeric_id
+rm -f "$fixtures/args"
+if run 7 "$fixtures/body.md" "99/../../../pulls/1" > /dev/null 2>&1; then
+  rejected=false
+else
+  rejected=true
+fi
+check [ "$rejected" = true ]
+check [ ! -e "$fixtures/args" ]
+
 exit $((failures > 0))

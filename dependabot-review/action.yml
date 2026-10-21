@@ -41,6 +41,23 @@ runs:
       with:
         github-token: ${{ github.token }}
 
+    # The caller's job condition is not enough on its own: only a run that
+    # Dependabot started on a PR that Dependabot opened is rated or merged,
+    # whichever secrets the run can read.
+    - name: Check the author
+      id: author
+      if: ${{ !cancelled() }}
+      shell: bash
+      env:
+        ACTOR: ${{ github.actor }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+      run: |
+        if [ "$ACTOR" = 'dependabot[bot]' ] && [ "$PR_AUTHOR" = 'dependabot[bot]' ]; then
+          echo "dependabot=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "dependabot=false" >> "$GITHUB_OUTPUT"
+        fi
+
     # Runs even when the metadata is missing, which the gate reports as a block.
     # Steps use !cancelled() rather than always(), so a run that concurrency
     # cancels for a newer push does not report on the old commit.
@@ -60,13 +77,13 @@ runs:
 
     # The official installer is allowed as an exception; see AGENTS.md.
     - name: Install Kiro CLI
-      if: steps.gate.outputs.gate == 'pass' && inputs.kiro-api-key != ''
+      if: steps.gate.outputs.gate == 'pass' && steps.author.outputs.dependabot == 'true' && inputs.kiro-api-key != ''
       shell: bash
       run: |
         curl -fsSL https://cli.kiro.dev/install | bash
 
     - name: Build the prompt
-      if: steps.gate.outputs.gate == 'pass' && inputs.kiro-api-key != ''
+      if: steps.gate.outputs.gate == 'pass' && steps.author.outputs.dependabot == 'true' && inputs.kiro-api-key != ''
       shell: bash
       env:
         GH_REPO: ${{ github.repository }}
@@ -84,7 +101,7 @@ runs:
     # credential other than its own API key. The prompt goes in on stdin, since
     # it can exceed the 128 KiB limit on a single argument.
     - name: Rate the risk with Kiro
-      if: steps.gate.outputs.gate == 'pass' && inputs.kiro-api-key != ''
+      if: steps.gate.outputs.gate == 'pass' && steps.author.outputs.dependabot == 'true' && inputs.kiro-api-key != ''
       shell: bash
       env:
         KIRO_API_KEY: ${{ inputs.kiro-api-key }}
@@ -99,30 +116,31 @@ runs:
           rm -f "$RUNNER_TEMP/kiro.out"
         fi
 
-    # Anything short of a valid verdict counts as high risk, except a run that a
-    # push by someone other than Dependabot started. Such a run reads Actions
-    # secrets instead of Dependabot secrets, so the key is empty by design and
-    # the PR is left unrated for manual review rather than failed as high.
+    # Anything short of a valid verdict counts as high risk, except a run that
+    # someone other than Dependabot started or a PR that Dependabot did not
+    # open, which is left unrated for manual review rather than failed as high.
     - name: Decide the risk
       id: verdict
       if: ${{ !cancelled() }}
       shell: bash
       env:
         ACTOR: ${{ github.actor }}
+        DEPENDABOT: ${{ steps.author.outputs.dependabot }}
         # A verdict that quotes the API key is discarded rather than posted.
         FORBIDDEN_TEXT: ${{ inputs.kiro-api-key }}
         GATE: ${{ steps.gate.outputs.gate }}
         GATE_REASON: ${{ steps.gate.outputs.reason }}
         KEY_SET: ${{ inputs.kiro-api-key != '' }}
+        PR_AUTHOR: ${{ github.event.pull_request.user.login }}
       run: |
         out=$RUNNER_TEMP/verdict.json
         evaluated=true
-        if [ "$GATE" != pass ]; then
+        if [ "$DEPENDABOT" != true ]; then
+          jq -n --arg actor "$ACTOR" --arg author "$PR_AUTHOR" \
+            '{risk: "skipped", summary: "Kiro did not rate this PR: \($actor) started this run on a PR opened by \($author), and only runs that Dependabot starts on its own PRs are rated.", reasons: []}' > "$out"
+        elif [ "$GATE" != pass ]; then
           jq -n --arg summary "${GATE_REASON:-Could not read Dependabot metadata}" \
             '{risk: "high", summary: $summary, reasons: []}' > "$out"
-        elif [ "$KEY_SET" != true ] && [ "$ACTOR" != 'dependabot[bot]' ]; then
-          jq -n --arg actor "$ACTOR" \
-            '{risk: "skipped", summary: "Kiro did not rate this PR: \($actor) started this run, so it has no Dependabot secrets.", reasons: []}' > "$out"
         elif [ "$KEY_SET" != true ]; then
           echo "::error::The kiro-api-key input is empty; register KIRO_API_KEY as a Dependabot secret"
           evaluated=false
@@ -192,7 +210,7 @@ runs:
     # workflows on the default branch.
     - name: Create the merge token
       id: token
-      if: steps.ci.outputs.ci == 'pass' && inputs.dry-run != 'true'
+      if: steps.ci.outputs.ci == 'pass' && steps.author.outputs.dependabot == 'true' && inputs.dry-run != 'true'
       uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
       with:
         client-id: ${{ inputs.app-client-id }}

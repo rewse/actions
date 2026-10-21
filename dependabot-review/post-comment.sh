@@ -9,6 +9,10 @@ set -euo pipefail
 repo=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY must be set}
 
 if [ -n "${3:-}" ]; then
+  if [[ ! "$3" =~ ^[0-9]+$ ]]; then
+    echo "Comment ID is not a number: $3" >&2
+    exit 1
+  fi
   gh api -X PATCH "repos/$repo/issues/comments/$3" -F "body=@$2" --jq .id
 else
   gh api -X POST "repos/$repo/issues/$1/comments" -F "body=@$2" --jq .id
