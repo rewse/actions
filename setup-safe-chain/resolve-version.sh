@@ -3,7 +3,7 @@
 # stable, immutable, and at least COOLDOWN_HOURS old.
 #
 # SAFE_CHAIN_RELEASES_FILE replaces the GitHub API response with a local JSON
-# file, for tests.
+# file, and RETRY_SECONDS sets the wait between API attempts, for tests.
 set -euo pipefail
 
 if ! [[ "${COOLDOWN_HOURS:-}" =~ ^[0-9]+$ ]]; then
@@ -14,7 +14,17 @@ fi
 if [ -n "${SAFE_CHAIN_RELEASES_FILE:-}" ]; then
   releases=$(cat "$SAFE_CHAIN_RELEASES_FILE")
 else
-  releases=$(gh api 'repos/AikidoSec/safe-chain/releases?per_page=100')
+  # The releases API intermittently answers 200 with an empty list, so retry
+  # until it returns at least one release.
+  for attempt in 1 2 3 4 5; do
+    releases=$(gh api 'repos/AikidoSec/safe-chain/releases?per_page=100')
+    if [ "$(jq 'length' <<<"$releases")" -gt 0 ]; then
+      break
+    fi
+    if [ "$attempt" -lt 5 ]; then
+      sleep "${RETRY_SECONDS:-2}"
+    fi
+  done
 fi
 
 tag=$(jq -r --argjson hours "$COOLDOWN_HOURS" '
