@@ -11,6 +11,7 @@
 - TruffleHog のイメージ更新が、`rewse/actions` 上で Dependabot の PR 1 本で完結し、タグとダイジェストが常に揃う。
 - イメージ更新だけを含む変更は、`rewse/actions` のパッチリリースまで自動で進み、呼び出し側の 13 リポジトリには Dependabot の `github-actions` 更新として届く。
 - 13 リポジトリの TruffleHog が同じバージョンに揃う。
+- `rewse/actions` のリリースノートが、手動・自動を問わず git-cliff で生成される。
 
 ## 非ゴール
 
@@ -57,11 +58,13 @@
 ```mermaid
 flowchart TD
   A[Dependabot docker: trufflehog/Dockerfile の FROM を更新する PR] --> B[dependabot-review が評価・rebase merge]
-  B --> C[main への push で trufflehog-release.yml が起動]
+  B --> C[main への push で trufflehog-auto-tag.yml が起動]
   C --> D{"最新タグ..HEAD に trufflehog/Dockerfile を含み、ほかは呼び出し側が実行しないパスだけで、全コミットの author が dependabot[bot] か"}
   D -->|いいえ| E[何もしない。次の手動リリースに含まれる]
-  D -->|はい| F[リリース専用 App のトークンでパッチを 1 つ上げたタグと GitHub Release を作成]
-  F --> G[13 リポジトリの Dependabot github-actions が rewse/actions を更新する PR]
+  D -->|はい| F[リリース専用 App のトークンでパッチを 1 つ上げたタグを push]
+  F --> R[タグの push で release.yml が起動し、git-cliff のノートで GitHub Release を作成]
+  M[管理者が手動でタグを push] --> R
+  R --> G[13 リポジトリの Dependabot github-actions が rewse/actions を更新する PR]
   G --> H[各リポジトリの dependabot-review が評価・rebase merge]
 ```
 
@@ -89,18 +92,26 @@ flowchart TD
 
 `.github/dependabot.yml` に `docker` エコシステムを追加する。`directory: /trufflehog`、週次、`cooldown.default-days: 5`（zizmor の抑制コメント付き）、グループは 1 つにまとめ、ほかのエントリと同じ書式に揃える。呼び出し側の `dependabot.yml` は変えない。
 
-### 自動リリース（`trufflehog-release.yml`）
+### 自動タグ付け（`trufflehog-auto-tag.yml`）
 
 - トリガーは `push`（`branches: [main]`, `paths: [trufflehog/Dockerfile]`）。`paths` は起動を絞るだけで、判定はジョブ内で行う。
 - 最上位の `permissions` は `contents: read` とし、ジョブにも追加の権限は与えない。タグとリリースはリリース専用 App のトークンで作るため、`GITHUB_TOKEN` に書き込み権限は要らない。
-- マージの push は `dependabot-review` の App が起こすので、このワークフローは Dependabot secrets ではなく Actions secrets を読める。リリース専用 App の秘密鍵は、デプロイ対象ブランチを `main` に限った Environment `release` の secret に置き、ジョブに `environment: release` を付ける。
+- マージの push は `dependabot-review` の App が起こすので、このワークフローは Dependabot secrets ではなく Actions secrets を読める。リリース専用 App の秘密鍵は、デプロイ対象ブランチを `main` に限った Environment `auto-tag` の secret に置き、ジョブに `environment: auto-tag` を付ける。`release.yml` はこの Environment を使わない。
 - 判定は、セマンティックバージョンで最新の `v*` タグから `HEAD` までについて行う。
   - `git diff --name-only <tag>..HEAD` に `trufflehog/Dockerfile` が含まれること。
   - それ以外の変更ファイルが、呼び出し側が実行しないパス（`.github/`, `.pre-commit-config.yaml`, `tests/`, `docs/`）だけであること。`trufflehog/` のほかのファイル、`dependabot-review/`、`setup-safe-chain/`、ルート直下の上記以外のファイルが 1 つでもあれば止める。
   - `git log --format=%an <tag>..HEAD` が全件 `dependabot[bot]` であること。人が書いたコミットが混ざっていれば、パスにかかわらず止める。
   - どれかを満たさなければ、理由をジョブのサマリーに書いて正常終了する。
-- 満たすときは、リリース専用の GitHub App のトークンを `actions/create-github-app-token` で発行し、最新タグのパッチを 1 つ上げたタグを `HEAD` に作り、`gh release create --generate-notes` で GitHub Release を作る。リリースノートの先頭には、Dockerfile の差分から読み取った TruffleHog の旧バージョンと新バージョンを書く。
+- 満たすときは、リリース専用の GitHub App のトークンを `actions/create-github-app-token` で発行し、最新タグのパッチを 1 つ上げたタグを `HEAD` に作って push する。GitHub Release は作らず、`release.yml` に任せる。App のトークンで push したタグは `GITHUB_TOKEN` の場合と違ってワークフローを起動するので、`release.yml` が動く。
 - 同じ push で二重に動かないよう `concurrency` を設定する。
+
+### リリースノート（`release.yml` と `cliff.toml`）
+
+手動・自動を問わず、`v*` タグの push で起動する `release.yml` が GitHub Release を作る。`enecoq-data-fetcher` などの `release.yml` と同じく、`orhun/git-cliff-action` を `--latest --strip header` で実行し、その出力をノートにして `gh release create` する。最上位の `permissions` は `contents: read` で、ジョブだけ `contents: write`。トークンは `GITHUB_TOKEN`。タグはすでにあるので、タグ作成の ruleset には触れない。
+
+`cliff.toml` はリポジトリのルートに置き、`enecoq-data-fetcher` のものを、比較 URL を `rewse/actions` に変えて写す。Dependabot のコミットは `build(deps): bump ...` なので、TruffleHog の旧バージョンと新バージョンは「📦 Build」の項目にそのまま出る。
+
+`release.yml` ができると、`~/git/AGENTS.md` の「`release.yml` のあるリポジトリには tag ruleset を付ける」ルールの対象にもなる。下記の ruleset はこのルールも満たす。
 
 ### リリース専用の GitHub App
 
@@ -123,13 +134,13 @@ GitHub Configuration の該当ルールを次のように改める。
 
 ## 移行の順序
 
-1. `rewse/actions` に `trufflehog/`、`dependabot.yml` の `docker` エントリ、`trufflehog-release.yml`、テスト、ドキュメントを入れ、自身の `trufflehog.yml` を `./trufflehog` に切り替えて、`workflow_dispatch` で一度スキャンが通ることを確かめる。
-2. リリース専用 App を作って `rewse/actions` にインストールし、Environment `release` に秘密鍵を、Actions variables にクライアント ID を登録する。ruleset を作り、v1.1.6 を手動でリリースする。このリリースで `81a6e14` など既存の未リリースの変更も出ていく。
+1. `rewse/actions` に `trufflehog/`、`dependabot.yml` の `docker` エントリ、`trufflehog-auto-tag.yml`、`release.yml`、`cliff.toml`、テスト、ドキュメントを入れ、自身の `trufflehog.yml` を `./trufflehog` に切り替えて、`workflow_dispatch` で一度スキャンが通ることを確かめる。
+2. リリース専用 App を作って `rewse/actions` にインストールし、Environment `auto-tag` に秘密鍵を、Actions variables にクライアント ID を登録する。ruleset を作り、v1.1.6 のタグを手動で push して、`release.yml` が git-cliff のノートで GitHub Release を作ることを確かめる。このリリースで `81a6e14` など既存の未リリースの変更も出ていく。
 3. 12 リポジトリの `trufflehog.yml` を `rewse/actions/trufflehog@<v1.1.6 の SHA>` に切り替え、`workflow_dispatch` でスキャンが通ることを確かめる。開いたままの trufflehog 更新 PR（rewse/dotfiles#14 など）は閉じる。
 4. `~/git/AGENTS.md` を更新する。
 
 ## ビルダーに任せること
 
 - 判定とバージョン計算をシェルスクリプトに切り出すかどうか、切り出した場合のテストの書き方（既存の `tests/test_*.sh` の流儀に合わせる）。
-- リリースノートの細かい文面とジョブサマリーの書式。
+- ジョブサマリーの書式。
 - 13 リポジトリへの展開を 1 リポジトリずつ PR にするか、直接 main に入れるか。各リポジトリの従来の運用に合わせる。
