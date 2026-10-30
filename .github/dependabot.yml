@@ -25,7 +25,9 @@ updates:
   - package-ecosystem: docker
     directory: /trufflehog
     schedule:
-      interval: weekly
+      # Daily, because an image update here is tagged and reaches every caller
+      # through their weekly updates, so a weekly run would add up to a week.
+      interval: daily
     cooldown:
       default-days: 5  # zizmor: ignore[dependabot-cooldown] Dependabot counts whole days, so 5 keeps the 96-hour minimum package age
     groups:
