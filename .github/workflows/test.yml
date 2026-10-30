@@ -35,6 +35,8 @@ jobs:
 
       - run: tests/test_trufflehog_dockerfile.sh
 
+      - run: tests/test_next_auto_tag.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
