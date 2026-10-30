@@ -18,10 +18,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: trufflesecurity/trufflehog@0186870afd2c4a90def791d80260923ba583d076  # v3.98.0
+      # actionlint does not parse the $/ self-repository syntax yet, and the job
+      # checks out the repository anyway.
+      - uses: ./trufflehog  # zizmor: ignore[self-repository]
         with:
-          base: ""
-          head: main
-          # Keep in step with the action version above; Dependabot does not update this input.
-          version: 3.98.0@sha256:0f32a1d73e552eaf528a4ac0800a26d32169d159bcd77303c833eb9dcdcb848b
-          extra_args: --results=verified,unknown
+          extra-args: --results=verified,unknown

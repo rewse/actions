@@ -1,0 +1,22 @@
+name: TruffleHog
+description: Scan the whole history of the main branch for secrets with the TruffleHog image pinned in this action.
+
+inputs:
+  extra-args:
+    description: Extra TruffleHog arguments, separated by spaces, such as --results=verified,unknown.
+    default: ""
+
+runs:
+  using: docker
+  image: Dockerfile
+  # The image's entrypoint splits its last argument into extra arguments,
+  # so extra-args must stay last.
+  args:
+    - git
+    - file:///github/workspace
+    - --branch
+    - main
+    - --fail
+    - --no-update
+    - --github-actions
+    - ${{ inputs.extra-args }}

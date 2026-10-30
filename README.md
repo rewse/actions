@@ -86,6 +86,25 @@ Installs [Aikido Safe Chain](https://github.com/AikidoSec/safe-chain) from the n
 
 The step fails when no release meets the conditions or when the GitHub API cannot be reached.
 
+## trufflehog
+
+Scans the whole history of `main` for secrets with the [TruffleHog](https://github.com/trufflesecurity/trufflehog) image pinned by tag and digest in `trufflehog/Dockerfile`. Dependabot updates the tag and the digest together, and an image update with nothing else to release is tagged as a patch release automatically, so callers follow new TruffleHog releases through their own Dependabot updates of this action. The action runs `trufflehog git` with `--branch main --fail --no-update --github-actions` and fails when it finds a secret. Check out the full history first.
+
+```yaml
+- uses: actions/checkout@<commit SHA>  # vX.Y.Z
+  with:
+    fetch-depth: 0
+    persist-credentials: false
+
+- uses: rewse/actions/trufflehog@<commit SHA>  # vX.Y.Z
+  with:
+    extra-args: --exclude-detectors=lob --results=verified,unknown
+```
+
+| Input | Default | Description |
+|---|---|---|
+| `extra-args` | `""` | Extra TruffleHog arguments, separated by spaces |
+
 ## Development
 
 Run the unit tests with `for t in tests/test_*.sh; do "$t" || exit 1; done`. Tag releases as `vX.Y.Z` so Dependabot can update callers that pin a commit SHA.

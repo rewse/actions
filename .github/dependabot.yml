@@ -22,3 +22,12 @@ updates:
     groups:
       pre-commit:
         patterns: ["*"]
+  - package-ecosystem: docker
+    directory: /trufflehog
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 5  # zizmor: ignore[dependabot-cooldown] Dependabot counts whole days, so 5 keeps the 96-hour minimum package age
+    groups:
+      docker:
+        patterns: ["*"]

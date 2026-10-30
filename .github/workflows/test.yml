@@ -33,6 +33,8 @@ jobs:
 
       - run: tests/test_post_comment.sh
 
+      - run: tests/test_trufflehog_dockerfile.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
@@ -53,3 +55,18 @@ jobs:
           got=$("$HOME/.safe-chain/bin/safe-chain" -v)
           echo "$got"
           grep -F "Current safe-chain version: ${WANT}" <<<"$got"
+
+  trufflehog:
+    name: TruffleHog Action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # actionlint does not parse the $/ self-repository syntax yet, and the job
+      # checks out the repository anyway.
+      - uses: ./trufflehog  # zizmor: ignore[self-repository]
+        with:
+          extra-args: --results=verified,unknown
