@@ -107,7 +107,7 @@ Scans the whole history of `main` for secrets with the [TruffleHog](https://gith
 
 ## Development
 
-Run the unit tests with `for t in tests/test_*.sh; do "$t" || exit 1; done`. Tag releases as `vX.Y.Z` so Dependabot can update callers that pin a commit SHA.
+Run the unit tests with `for t in tests/test_*.sh; do "$t" || exit 1; done`. Tag releases as `vX.Y.Z` so Dependabot can update callers that pin a commit SHA; the tag push publishes the release with notes from git-cliff. A TruffleHog image update is tagged automatically under the conditions in [AGENTS.md](AGENTS.md#releases).
 
 ## License
 
