@@ -1,0 +1,56 @@
+name: TruffleHog Auto Tag
+
+on:
+  push:
+    branches: [main]
+    paths: [trufflehog/Dockerfile]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trufflehog-auto-tag
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag
+    runs-on: ubuntu-latest
+    environment: auto-tag
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Decide the tag
+        id: next
+        run: |
+          if tag=$(.github/scripts/next-auto-tag.sh); then
+            echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          else
+            echo "Not tagged: $tag" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # The release-only App can bypass the tag ruleset, which GITHUB_TOKEN and
+      # the dependabot-review App cannot, and a tag it creates starts release.yml.
+      - name: Create the tag token
+        id: token
+        if: steps.next.outputs.tag != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1  # v3.2.0
+        with:
+          client-id: ${{ vars.AUTO_TAG_APP_CLIENT_ID }}
+          permission-contents: write
+          private-key: ${{ secrets.AUTO_TAG_APP_PRIVATE_KEY }}
+
+      - name: Create the tag
+        if: steps.next.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TAG: ${{ steps.next.outputs.tag }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" > /dev/null
+          echo "Tagged $TAG at $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
