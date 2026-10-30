@@ -17,6 +17,8 @@ runs:
     - --branch
     - main
     - --fail
+    # Without this, a scan that cannot resolve main scans nothing and passes.
+    - --fail-on-scan-errors
     - --no-update
     - --github-actions
     - ${{ inputs.extra-args }}

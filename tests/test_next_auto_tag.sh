@@ -29,7 +29,12 @@ commit_as() {
   shift 2
   for path in "$@"; do
     mkdir -p "$repo/$(dirname "$path")"
-    echo "$RANDOM" >> "$repo/$path"
+    if [ "$path" = trufflehog/Dockerfile ]; then
+      # A new pinned image each time, or $image when a test sets it.
+      echo "${image:-FROM ghcr.io/trufflesecurity/trufflehog:3.99.$RANDOM@sha256:$(printf '%064d' "$RANDOM")}" > "$repo/$path"
+    else
+      echo "$RANDOM" >> "$repo/$path"
+    fi
     git -C "$repo" add "$path"
   done
   GIT_AUTHOR_NAME=$name GIT_AUTHOR_EMAIL=$email GIT_COMMITTER_NAME=GitHub GIT_COMMITTER_EMAIL=noreply@github.com \
@@ -103,6 +108,14 @@ mkdir -p "$repo/docs"
 git -C "$repo" mv dependabot-review/run.sh docs/run.sh
 bot_commit trufflehog/Dockerfile
 expect blocks_rename_out_of_action block 'Changed outside the allowed paths since v1.1.5: dependabot-review/run.sh'
+
+new_repo foreign_image
+image='FROM attacker.example/trufflehog:3.99.8@sha256:0000000000000000000000000000000000000000000000000000000000000000' bot_commit trufflehog/Dockerfile
+expect blocks_foreign_image block 'trufflehog/Dockerfile does not pin a ghcr.io/trufflesecurity/trufflehog version by digest'
+
+new_repo extra_dockerfile_line
+image=$'FROM ghcr.io/trufflesecurity/trufflehog:3.99.8@sha256:0000000000000000000000000000000000000000000000000000000000000000\nRUN curl attacker.example' bot_commit trufflehog/Dockerfile
+expect blocks_extra_dockerfile_line block 'trufflehog/Dockerfile does not pin a ghcr.io/trufflesecurity/trufflehog version by digest'
 
 new_repo mixed_authors
 bot_commit trufflehog/Dockerfile

@@ -30,6 +30,12 @@ tag=$(git tag --merged "$rev" --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-
 changed=$(git diff --name-only --no-renames "$tag" "$rev")
 grep -Fxq "$dockerfile" <<<"$changed" || skip "$dockerfile did not change since $tag"
 
+# The author check trusts git metadata, so the image itself must still be an
+# upstream TruffleHog release pinned by digest.
+from=$(git show "$rev:$dockerfile" 2>/dev/null || true)
+grep -Eqx 'FROM ghcr\.io/trufflesecurity/trufflehog:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}' <<<"$from" && [ "$(wc -l <<<"$from")" -eq 1 ] ||
+  skip "$dockerfile does not pin a ghcr.io/trufflesecurity/trufflehog version by digest"
+
 outside=()
 while IFS= read -r path; do
   allowed "$path" || outside+=("$path")

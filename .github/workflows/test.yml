@@ -67,6 +67,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The action scans the local main branch, which a checkout of another
+      # branch or a pull request does not create.
+      - name: Create the local main branch
+        run: git show-ref --verify --quiet refs/heads/main || git branch main origin/main
+
       # actionlint does not parse the $/ self-repository syntax yet, and the job
       # checks out the repository anyway.
       - uses: ./trufflehog  # zizmor: ignore[self-repository]
