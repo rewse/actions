@@ -14,14 +14,17 @@ fi
 
 # block <label> <updateType regex>: exits 1 with the reason when any element
 # matches. Presence decides the result, so an element with an empty or missing
-# name still blocks. The reason is capped because it is posted publicly.
+# name still blocks. The reason is capped because it is posted publicly, and
+# line breaks in names become spaces because the caller writes the reason to
+# $GITHUB_OUTPUT as one key=value line.
 block() {
   local names
   if jq -e --arg filter "$2" \
     'any(.[]; .updateType | tostring | test($filter))' >/dev/null <<<"$json"; then
     names=$(jq -r --arg filter "$2" '
       [.[] | select(.updateType | tostring | test($filter))
-        | (.dependencyName // "" | tostring) | if . == "" then "(unnamed)" else . end]
+        | (.dependencyName // "" | tostring | gsub("[\r\n]"; " "))
+        | if . == "" then "(unnamed)" else . end]
       | join(", ")
     ' <<<"$json")
     reason="$1: $names"

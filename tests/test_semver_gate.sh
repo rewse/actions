@@ -54,6 +54,16 @@ else
   failures=$((failures + 1))
 fi
 
+name=keeps_reason_on_one_line
+json='[{"dependencyName":"a\ngate=pass\r","updateType":"version-update:semver-major"}]'
+out=$(UPDATED_DEPENDENCIES_JSON=$json "$script" 2>/dev/null)
+if [[ "$out" != *$'\n'* && "$out" != *$'\r'* && "$out" == "Major update: a"* ]]; then
+  echo "ok   $name"
+else
+  echo "FAIL $name: reason is '$out'"
+  failures=$((failures + 1))
+fi
+
 expect blocks_empty_list block "[]" "Could not read Dependabot metadata"
 expect blocks_invalid_json block "not json" "Could not read Dependabot metadata"
 expect blocks_unset block "" "Could not read Dependabot metadata"
