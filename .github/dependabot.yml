@@ -2,7 +2,8 @@ version: 2
 
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    # Each published action is listed, since / covers only the workflows.
+    directories: ["/", "/dependabot-review", "/setup-safe-chain", "/trufflehog"]
     schedule:
       interval: weekly
     cooldown:

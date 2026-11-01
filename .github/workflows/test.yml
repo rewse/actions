@@ -37,6 +37,8 @@ jobs:
 
       - run: tests/test_next_auto_tag.sh
 
+      - run: tests/test_dependabot_coverage.sh
+
   setup-safe-chain:
     name: Setup Safe Chain
     runs-on: ubuntu-latest
