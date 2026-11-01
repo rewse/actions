@@ -52,7 +52,7 @@ jobs:
 |---|---|---|
 | `app-client-id` | | Client ID of the GitHub App that merges the PR |
 | `app-private-key` | | Private key of the GitHub App that merges the PR |
-| `dry-run` | `false` | When `true`, rate and comment but never merge |
+| `dry-run` | `false` | When `true`, rate and comment but never merge; any value other than `true` or `false` fails the run |
 | `kiro-api-key` | | Kiro API key for headless mode |
 | `kiro-model` | | Model for Kiro to use; empty uses the Kiro default |
 

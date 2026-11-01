@@ -9,7 +9,7 @@ inputs:
     description: Private key of the GitHub App that merges the PR.
     required: true
   dry-run:
-    description: When true, rate and comment but never merge.
+    description: When true, rate and comment but never merge. Any value other than true or false fails the run.
     default: "false"
   kiro-api-key:
     description: Kiro API key for headless mode.
@@ -29,6 +29,13 @@ outputs:
 runs:
   using: composite
   steps:
+    - name: Check the inputs
+      id: inputs
+      shell: bash
+      env:
+        DRY_RUN: ${{ inputs.dry-run }}
+      run: '"$GITHUB_ACTION_PATH/check-dry-run.sh"'
+
     - name: Checkout
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       with:
@@ -119,9 +126,11 @@ runs:
     # Anything short of a valid verdict counts as high risk, except a run that
     # someone other than Dependabot started or a PR that Dependabot did not
     # open, which is left unrated for manual review rather than failed as high.
+    # Invalid inputs leave the risk empty, which skips the label, comment,
+    # and merge steps.
     - name: Decide the risk
       id: verdict
-      if: ${{ !cancelled() }}
+      if: ${{ !cancelled() && steps.inputs.outcome == 'success' }}
       shell: bash
       env:
         ACTOR: ${{ github.actor }}
