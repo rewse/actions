@@ -33,6 +33,10 @@ expect rejects_non_string_reasons FAIL '{"risk":"low","summary":"s","reasons":[1
 expect rejects_missing_summary FAIL '{"risk":"low","reasons":[]}'
 expect rejects_empty FAIL ''
 expect rejects_valid_then_malformed_last_line FAIL "$v"$'\n''{"risk":"high","summary":"has "quote"","reasons":[]}'
+expect rejects_single_line_fence FAIL "$v"$'\n''```json '"$h"'```'
+expect rejects_trailing_text FAIL "$v"' trailing text'
+expect rejects_two_objects FAIL "$v$v"
+expect rejects_verdict_then_other_value FAIL "$v"' {"x":1}'
 expect rejects_leaked_key FAIL '{"risk":"low","summary":"key is sk-SECRET-123","reasons":[]}'
 expect rejects_leaked_key_in_reasons FAIL '{"risk":"low","summary":"s","reasons":["x sk-SECRET-123 y"]}'
 long=$(head -c 600 /dev/zero | tr '\0' x)
