@@ -27,6 +27,8 @@ jobs:
 
       - run: tests/test_build_prompt.sh
 
+      - run: tests/test_kiro_agent.sh
+
       - run: tests/test_check_status.sh
 
       - run: tests/test_wait_checks.sh
