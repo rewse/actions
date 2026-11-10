@@ -62,6 +62,25 @@ expect rejects_wrong_nonce FAIL '{"nonce":"n0nce2","risk":"low","summary":"s","r
 expect rejects_numeric_nonce FAIL '{"nonce":1,"risk":"low","summary":"s","reasons":["r"]}'
 NONCE=1 expect compares_nonce_as_string FAIL '{"nonce":1,"risk":"low","summary":"s","reasons":["r"]}'
 NONCE='' expect requires_expected_nonce FAIL '{"nonce":"","risk":"low","summary":"s","reasons":["r"]}'
+# exits <name> <expected exit status> <Kiro output>
+exits() {
+  local name=$1 want=$2 got=0
+  FORBIDDEN_TEXT=sk-SECRET-123 VERDICT_NONCE=n0nce "$script" <<<"$3" >/dev/null 2>&1 || got=$?
+  if [ "$got" = "$want" ]; then
+    echo "ok   $name"
+  else
+    echo "FAIL $name: want exit $want, got $got"
+    failures=$((failures + 1))
+  fi
+}
+
+exits exits_0_on_valid_verdict 0 "$vn"
+exits exits_1_on_invalid_verdict 1 '{"nonce":"n0nce","risk":"none","summary":"s","reasons":[]}'
+exits exits_1_on_wrong_nonce 1 '{"nonce":"other","risk":"low","summary":"key is sk-SECRET-123","reasons":[]}'
+exits exits_2_on_forbidden_text 2 '{"nonce":"n0nce","risk":"low","summary":"key is sk-SECRET-123","reasons":[]}'
+exits exits_2_on_encoded_key 2 '{"nonce":"n0nce","risk":"low","summary":"s","reasons":["c2stU0VDUkVULTEyMw"]}'
+exits exits_2_on_credential_shape 2 '{"nonce":"n0nce","risk":"low","summary":"-----BEGIN CERTIFICATE-----","reasons":[]}'
+
 long=$(head -c 600 /dev/zero | tr '\0' x)
 got=$(jq -cn --arg l "$long" '{nonce: "n0nce", risk: "low", summary: $l, reasons: [range(12) | $l]}' \
   | FORBIDDEN_TEXT=sk-SECRET-123 VERDICT_NONCE=n0nce "$script" \
