@@ -149,7 +149,8 @@ runs:
       env:
         ACTOR: ${{ github.actor }}
         DEPENDABOT: ${{ steps.author.outputs.dependabot }}
-        # A verdict that quotes the API key is discarded rather than posted.
+        # A verdict that holds the API key in any form that parse-verdict.sh
+        # checks is discarded rather than posted.
         FORBIDDEN_TEXT: ${{ inputs.kiro-api-key }}
         GATE: ${{ steps.gate.outputs.gate }}
         GATE_REASON: ${{ steps.gate.outputs.reason }}
