@@ -14,6 +14,6 @@ Dependabot changes only version references, so an update can leave behind a valu
 
 When unsure between two levels, choose the higher one.
 
-End your answer with a single line containing only this JSON object, with no code fence:
+End your answer with a single line containing only this JSON object, with no code fence and with the nonce exactly as given here:
 
-{"risk":"low|medium|high","summary":"<one sentence>","reasons":["<reason>", "..."]}
+{"nonce":"{{VERDICT_NONCE}}","risk":"low|medium|high","summary":"<one sentence>","reasons":["<reason>", "..."]}

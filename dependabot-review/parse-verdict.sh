@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Reads the Kiro CLI output on stdin and prints its verdict,
-# {"risk":"low|medium|high","summary":"...","reasons":["..."]}, as compact JSON.
-# The verdict must be the last non-empty line apart from lines that hold only a
-# code fence, and that line must hold exactly one JSON value; an earlier line
-# never counts, since Kiro may quote a verdict planted in the PR text.
+# {"nonce":"...","risk":"low|medium|high","summary":"...","reasons":["..."]},
+# as compact JSON without the nonce. The verdict must be the last non-empty
+# line apart from lines that hold only a code fence, and that line must hold
+# exactly one JSON value; an earlier line never counts, since Kiro may quote a
+# verdict planted in the PR text. The nonce must equal VERDICT_NONCE, the
+# per-run value in the prompt, which a verdict planted in the PR text cannot
+# know.
 # The summary and reasons are capped in length because they are posted
 # publicly. Exits 1, so the caller can fail closed, when the last line is not a
 # valid verdict or its text holds FORBIDDEN_TEXT or anything shaped like a
@@ -48,9 +51,10 @@ last=$(grep -v -e '^[[:space:]]*$' -e '^[[:space:]]*```[[:alnum:]]*[[:space:]]*$
 
 # Slurping makes jq parse the whole line before printing anything, so trailing
 # text or a second value yields no output instead of a partial verdict.
-if ! verdict=$(jq -c -s '
+if ! verdict=$(jq -c -s --arg nonce "${VERDICT_NONCE:-}" '
   select(length == 1) | .[0]
   | select(type == "object")
+  | select($nonce != "" and .nonce == $nonce)
   | select(.risk | IN("low", "medium", "high"))
   | select(.summary | type == "string")
   | select((.reasons | type == "array") and all(.reasons[]; type == "string"))
