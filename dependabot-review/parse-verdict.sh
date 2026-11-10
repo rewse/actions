@@ -8,9 +8,9 @@
 # per-run value in the prompt, which a verdict planted in the PR text cannot
 # know.
 # The summary and reasons are capped in length because they are posted
-# publicly. Exits 1, so the caller can fail closed, when the last line is not a
-# valid verdict or its text holds FORBIDDEN_TEXT or anything shaped like a
-# credential; see leaks below.
+# publicly. Exits 1 when the last line is not a valid verdict, and 2 when its
+# text holds FORBIDDEN_TEXT or anything shaped like a credential (see leaks
+# below), so the caller can fail closed and tell the two apart.
 set -euo pipefail
 
 # Keeps only ASCII letters and digits.
@@ -69,6 +69,6 @@ if [ -z "$verdict" ] || [[ "$verdict" == *$'\n'* ]]; then
 fi
 if leaks "$verdict"; then
   echo "The verdict contains forbidden text" >&2
-  exit 1
+  exit 2
 fi
 echo "$verdict"

@@ -145,7 +145,8 @@ runs:
     # someone other than Dependabot started or a PR that Dependabot did not
     # open, which is left unrated for manual review rather than failed as high.
     # Invalid inputs leave the risk empty, which skips the label, comment,
-    # and merge steps.
+    # and merge steps. A verdict discarded for what its text holds gets its
+    # own error and summary, apart from a run where Kiro gave no verdict.
     - name: Decide the risk
       id: verdict
       if: ${{ !cancelled() && steps.inputs.outcome == 'success' }}
@@ -174,10 +175,21 @@ runs:
           echo "::error::The kiro-api-key input is empty; register KIRO_API_KEY as a Dependabot secret"
           evaluated=false
           jq -n '{risk: "high", summary: "Kiro could not evaluate this PR: no API key.", reasons: []}' > "$out"
-        elif ! { [ -f "$RUNNER_TEMP/kiro.out" ] &&
-          "$GITHUB_ACTION_PATH/parse-verdict.sh" < "$RUNNER_TEMP/kiro.out" > "$out"; }; then
-          evaluated=false
-          jq -n '{risk: "high", summary: "Kiro could not evaluate this PR.", reasons: []}' > "$out"
+        else
+          status=1
+          if [ -f "$RUNNER_TEMP/kiro.out" ]; then
+            status=0
+            "$GITHUB_ACTION_PATH/parse-verdict.sh" < "$RUNNER_TEMP/kiro.out" > "$out" || status=$?
+          fi
+          if [ "$status" -eq 2 ]; then
+            echo "::error::Discarded Kiro's verdict because its text looked like it held the Kiro API key or another credential"
+            evaluated=false
+            jq -n --arg summary "Kiro's verdict was discarded because it contained text that looked like a credential." \
+              '{risk: "high", summary: $summary, reasons: []}' > "$out"
+          elif [ "$status" -ne 0 ]; then
+            evaluated=false
+            jq -n '{risk: "high", summary: "Kiro could not evaluate this PR.", reasons: []}' > "$out"
+          fi
         fi
         cat "$out"
         echo "risk=$(jq -r .risk "$out")" >> "$GITHUB_OUTPUT"

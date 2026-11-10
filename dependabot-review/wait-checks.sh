@@ -14,7 +14,24 @@ timeout_seconds=${TIMEOUT_SECONDS:-1800}
 none_grace_seconds=${NONE_GRACE_SECONDS:-300}
 dir=$(dirname "$0")
 head_sha=${HEAD_SHA:?HEAD_SHA must be set}
+gh_stderr=$(mktemp)
+trap 'rm -f "$gh_stderr"' EXIT
+warned=
 SECONDS=0
+
+# warn_gh_stderr: prints what gh wrote to stderr as a ::warning:: on stderr,
+# since stdout carries the result, unless the last warning said the same.
+warn_gh_stderr() {
+  local message
+  message=$(head -c 1000 "$gh_stderr")
+  [ -n "$message" ] && [ "$message" != "$warned" ] || return 0
+  warned=$message
+  # Workflow commands end at a line break, so escape them and %.
+  message=${message//'%'/%25}
+  message=${message//$'\r'/%0D}
+  message=${message//$'\n'/%0A}
+  echo "::warning::gh pr checks did not list the checks: $message" >&2
+}
 
 # Prints true when every workflow run for HEAD_SHA outside OWN_WORKFLOW has
 # completed, and false otherwise, including when the runs cannot be listed.
@@ -28,8 +45,9 @@ runs_completed() {
 while :; do
   # gh exits non-zero while checks are pending or failing, so only its output
   # matters here.
-  checks=$(gh pr checks "$1" --json name,workflow,bucket 2>/dev/null || true)
+  checks=$(gh pr checks "$1" --json name,workflow,bucket 2>"$gh_stderr" || true)
   if ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"$checks"; then
+    warn_gh_stderr
     checks='[]'
   fi
   state=$("$dir/check-status.sh" <<<"$checks")
