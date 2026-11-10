@@ -1,0 +1,21 @@
+{
+  "name": "dependabot-review",
+  "description": "Rates the risk of a Dependabot pull request with read-only file tools.",
+  "tools": ["read_file", "list_directory", "file_search", "grep_search"],
+  "includeMcpJson": false,
+  "permissions": {
+    "rules": [
+      {
+        "capability": "fs_read",
+        "match": ["/"],
+        "exclude": ["$REPO_DIR", "$INPUT_DIR"],
+        "effect": "deny"
+      },
+      {
+        "capability": "fs_read",
+        "match": ["$REPO_DIR", "$INPUT_DIR"],
+        "effect": "allow"
+      }
+    ]
+  }
+}

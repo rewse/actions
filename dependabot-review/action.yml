@@ -98,15 +98,22 @@ runs:
         PR: ${{ github.event.pull_request.number }}
         UPDATED_DEPENDENCIES_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
       run: |
-        printf '%s' "$UPDATED_DEPENDENCIES_JSON" > "$RUNNER_TEMP/metadata.json"
-        gh pr view "$PR" --json body --jq .body > "$RUNNER_TEMP/body.md"
-        gh pr diff "$PR" > "$RUNNER_TEMP/diff.patch"
-        "$GITHUB_ACTION_PATH/build-prompt.sh" "$RUNNER_TEMP/metadata.json" \
-          "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/diff.patch" > "$RUNNER_TEMP/prompt.md"
+        input=$RUNNER_TEMP/kiro-input
+        mkdir -p "$input"
+        printf '%s' "$UPDATED_DEPENDENCIES_JSON" > "$input/metadata.json"
+        gh pr view "$PR" --json body --jq .body > "$input/body.md"
+        gh pr diff "$PR" > "$input/diff.patch"
+        "$GITHUB_ACTION_PATH/build-prompt.sh" "$input/metadata.json" \
+          "$input/body.md" "$input/diff.patch" > "$RUNNER_TEMP/prompt.md"
 
-    # The PR body and diff are untrusted, so Kiro gets read-only tools and no
-    # credential other than its own API key. The prompt goes in on stdin, since
-    # it can exceed the 128 KiB limit on a single argument.
+    # The PR body and diff are untrusted, so Kiro runs an agent whose only
+    # tools read files, which it may do only in a copy of the checkout and in
+    # the prompt inputs, and gets no credential other than its own API key.
+    # The agent's permissions rules apply only on the V3 engine, and the empty
+    # --trust-tools leaves them as the only grant. KIRO_HOME and the copy that
+    # Kiro runs in are new directories from mktemp, so neither ~/.kiro nor a
+    # .kiro in the checkout adds agents, hooks, or MCP servers. The prompt goes
+    # in on stdin, since it can exceed the 128 KiB limit on a single argument.
     - name: Rate the risk with Kiro
       if: steps.gate.outputs.gate == 'pass' && steps.author.outputs.dependabot == 'true' && inputs.kiro-api-key != ''
       shell: bash
@@ -114,11 +121,18 @@ runs:
         KIRO_API_KEY: ${{ inputs.kiro-api-key }}
         KIRO_MODEL: ${{ inputs.kiro-model }}
       run: |
-        args=(chat --no-interactive "--trust-tools=read,grep")
+        KIRO_HOME=$(mktemp -d "$RUNNER_TEMP/kiro-home.XXXXXX")
+        export KIRO_HOME
+        workspace=$(mktemp -d "$RUNNER_TEMP/kiro-workspace.XXXXXX")
+        "$GITHUB_ACTION_PATH/copy-checkout.sh" "$GITHUB_WORKSPACE" "$workspace"
+        mkdir "$KIRO_HOME/agents"
+        "$GITHUB_ACTION_PATH/render-kiro-agent.sh" "$workspace" "$RUNNER_TEMP/kiro-input" \
+          > "$KIRO_HOME/agents/dependabot-review.json"
+        args=(chat --v3 --no-interactive --agent dependabot-review --trust-tools=)
         if [ -n "$KIRO_MODEL" ]; then
           args+=(--model "$KIRO_MODEL")
         fi
-        if ! timeout 600 "$HOME/.local/bin/kiro-cli" "${args[@]}" < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/kiro.out"; then
+        if ! (cd "$workspace" && timeout 600 "$HOME/.local/bin/kiro-cli" "${args[@]}") < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/kiro.out"; then
           echo "::warning::Kiro CLI failed or timed out"
           rm -f "$RUNNER_TEMP/kiro.out"
         fi
