@@ -89,7 +89,9 @@ runs:
       run: |
         curl -fsSL https://cli.kiro.dev/install | bash
 
+    # The nonce ties the verdict to this run's prompt; see build-prompt.sh.
     - name: Build the prompt
+      id: prompt
       if: steps.gate.outputs.gate == 'pass' && steps.author.outputs.dependabot == 'true' && inputs.kiro-api-key != ''
       shell: bash
       env:
@@ -103,7 +105,9 @@ runs:
         printf '%s' "$UPDATED_DEPENDENCIES_JSON" > "$input/metadata.json"
         gh pr view "$PR" --json body --jq .body > "$input/body.md"
         gh pr diff "$PR" > "$input/diff.patch"
-        "$GITHUB_ACTION_PATH/build-prompt.sh" "$input/metadata.json" \
+        nonce=$(openssl rand -hex 16)
+        echo "nonce=$nonce" >> "$GITHUB_OUTPUT"
+        VERDICT_NONCE=$nonce "$GITHUB_ACTION_PATH/build-prompt.sh" "$input/metadata.json" \
           "$input/body.md" "$input/diff.patch" > "$RUNNER_TEMP/prompt.md"
 
     # The PR body and diff are untrusted, so Kiro runs an agent whose only
@@ -156,6 +160,7 @@ runs:
         GATE_REASON: ${{ steps.gate.outputs.reason }}
         KEY_SET: ${{ inputs.kiro-api-key != '' }}
         PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        VERDICT_NONCE: ${{ steps.prompt.outputs.nonce }}
       run: |
         out=$RUNNER_TEMP/verdict.json
         evaluated=true
