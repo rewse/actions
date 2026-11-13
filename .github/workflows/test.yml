@@ -35,6 +35,8 @@ jobs:
 
       - run: tests/test_wait_checks.sh
 
+      - run: tests/test_merge_pr.sh
+
       - run: tests/test_render_comment.sh
 
       - run: tests/test_post_comment.sh
