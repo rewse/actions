@@ -270,7 +270,8 @@ runs:
         permission-pull-requests: write
         private-key: ${{ inputs.app-private-key }}
 
-    # --match-head-commit refuses to merge commits pushed after the rating.
+    # merge-pr.sh refuses to merge commits pushed after the rating and retries
+    # when another PR's merge moves the base branch at the same moment.
     - name: Merge the PR
       id: merge
       if: steps.token.outcome == 'success'
@@ -281,12 +282,11 @@ runs:
         HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         PR: ${{ github.event.pull_request.number }}
       run: |
-        if err=$(gh pr merge "$PR" --rebase --match-head-commit "$HEAD_SHA" 2>&1 >/dev/null); then
+        if err=$("$GITHUB_ACTION_PATH/merge-pr.sh" "$PR"); then
           echo "merged=true" >> "$GITHUB_OUTPUT"
         else
-          echo "$err" >&2
           echo "merged=false" >> "$GITHUB_OUTPUT"
-          echo "error=$(head -n 1 <<<"$err")" >> "$GITHUB_OUTPUT"
+          echo "error=$err" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Report the outcome
