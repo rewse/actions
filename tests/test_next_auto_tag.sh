@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Tests .github/scripts/next-auto-tag.sh against throwaway git repositories and
-# a fake curl that stands in for ghcr.io.
+# Tests .github/scripts/next-auto-tag.sh against throwaway git repositories, a
+# fake curl that stands in for ghcr.io and the GitHub API, and a fake date.
 set -uo pipefail
 
 cd "$(dirname "$0")/.." || exit 1
@@ -23,8 +23,10 @@ pin() {
 
 # The fake curl hands out a token and answers manifest requests that carry it
 # with digest_of <tag>, but only when the Accept header lists the Docker
-# manifest list type, as ghcr.io serves the TruffleHog tags. FAKE_CURL_FAIL=token
-# or manifest makes that request fail.
+# manifest list type, as ghcr.io serves the TruffleHog tags. It answers a
+# GitHub Release lookup with FAKE_PUBLISHED_AT as published_at, or null when
+# that is empty. FAKE_CURL_FAIL=token, manifest, or release makes that request
+# fail.
 cat > "$tmp/bin/curl" <<CURL
 #!/usr/bin/env bash
 $(declare -f digest_of)
@@ -56,10 +58,26 @@ case $args in
     fi
     printf 'HTTP/2 200\r\ncontent-type: application/vnd.docker.distribution.manifest.list.v2+json\r\ndocker-content-digest: %s\r\n\r\n' "$digest"
     ;;
+  *' https://api.github.com/repos/trufflesecurity/trufflehog/releases/tags/v'*)
+    [ "${FAKE_CURL_FAIL:-}" != release ] || fail 404
+    tag=${args##*/releases/tags/}
+    tag=${tag%% *}
+    published=${FAKE_PUBLISHED_AT-2026-11-01T00:00:00Z}
+    jq -cn --arg tag "$tag" --arg published "$published" \
+      '{tag_name: $tag, published_at: (if $published == "" then null else $published end)}'
+    ;;
   *) echo "fake curl: unexpected request: $*" >&2; exit 2 ;;
 esac
 CURL
 chmod +x "$tmp/bin/curl"
+
+# The fake date tells the time as FAKE_NOW, by default 2026-11-13T00:00:00Z.
+cat > "$tmp/bin/date" <<'DATE'
+#!/usr/bin/env bash
+[ "$*" = +%s ] || { echo "fake date: unexpected arguments: $*" >&2; exit 2; }
+echo "${FAKE_NOW:-1794528000}"
+DATE
+chmod +x "$tmp/bin/date"
 
 bot_name='dependabot[bot]'
 bot_email='49699333+dependabot[bot]@users.noreply.github.com'
@@ -214,6 +232,15 @@ new_repo registry_error
 bot_commit trufflehog/Dockerfile
 FAKE_CURL_FAIL=token expect blocks_token_error block "Could not get the digest of trufflehog:3.99.$serial from ghcr.io"
 FAKE_CURL_FAIL=manifest expect blocks_registry_error block "Could not get the digest of trufflehog:3.99.$serial from ghcr.io"
+
+new_repo release_age
+bot_commit trufflehog/Dockerfile
+FAKE_PUBLISHED_AT=2026-11-09T00:00:01Z expect blocks_recent_release block "TruffleHog 3.99.$serial was published at 2026-11-09T00:00:01Z, less than 96 hours ago"
+FAKE_PUBLISHED_AT=2026-11-09T00:00:00Z expect allows_release_96_hours_old tag v1.1.6
+FAKE_PUBLISHED_AT=2026-11-14T00:00:00Z expect blocks_future_release block "TruffleHog 3.99.$serial was published at 2026-11-14T00:00:00Z, less than 96 hours ago"
+FAKE_CURL_FAIL=release expect blocks_release_lookup_error block "Could not get the publication time of TruffleHog 3.99.$serial from GitHub"
+FAKE_PUBLISHED_AT='' expect blocks_unpublished_release block "Could not get the publication time of TruffleHog 3.99.$serial from GitHub"
+FAKE_PUBLISHED_AT='2026-11-01 00:00:00' expect blocks_malformed_release_time block "Could not get the publication time of TruffleHog 3.99.$serial from GitHub"
 
 new_repo mixed_authors
 bot_commit trufflehog/Dockerfile

@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
     paths: [trufflehog/Dockerfile]
+  # The gate holds an image back until its upstream release is 96 hours old,
+  # so a daily run tags it once that has passed.
+  schedule:
+    - cron: "26 22 * * *"  # Every day at 07:26 JST (22:26 UTC)
   workflow_dispatch:
 
 permissions:
