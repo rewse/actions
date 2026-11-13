@@ -6,7 +6,7 @@ GitHub Actions shared by the [rewse](https://github.com/rewse) repositories.
 
 Rates the risk of a Dependabot PR with [Kiro CLI](https://kiro.dev/docs/cli/headless) in headless mode and rebase-merges the PR when every condition holds:
 
-- Every updated dependency is a patch or minor update. A major update or an unknown update type anywhere in a grouped PR rates the whole PR high without asking Kiro.
+- Every updated dependency is a patch or minor update, or a Docker image whose tag stays the same and whose digest changes, which the diff must confirm. A major update or an unknown update type anywhere in a grouped PR rates the whole PR high without asking Kiro.
 - Kiro rates the risk low after reading the changelog, the diff, and how the repository uses the dependency.
 - Every check outside the calling workflow passes within 30 minutes.
 

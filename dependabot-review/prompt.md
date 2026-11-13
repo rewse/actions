@@ -12,6 +12,8 @@ Classify the risk as one of:
 
 Dependabot changes only version references, so an update can leave behind a value that the repository says must move with it. Read `AGENTS.md` in the repository, if there is one, and the comments near each changed line, such as a note to keep an input in step with an action version. If they require a companion change that this pull request does not make, so that a related value is left unchanged, rate the risk at least medium and name the stale value in the reasons.
 
+An `updateType` of `version-update:digest` in the metadata means that a Docker image keeps its tag and only its digest changes.
+
 When unsure between two levels, choose the higher one.
 
 End your answer with a single line containing only this JSON object, with no code fence and with the nonce exactly as given here:
