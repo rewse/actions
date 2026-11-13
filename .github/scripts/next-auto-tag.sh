@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Prints the next patch tag when everything since the latest release tag is a
-# Dependabot update of the TruffleHog image to a newer upstream release, plus
-# Dependabot changes to paths that callers never run. Otherwise prints why not
-# and exits 1.
+# Dependabot update of the TruffleHog image to a newer upstream release that is
+# at least 96 hours old, plus Dependabot changes to paths that callers never
+# run. Otherwise prints why not and exits 1.
 set -euo pipefail
 
 rev=${1:-HEAD}
@@ -11,6 +11,7 @@ repository=trufflesecurity/trufflehog
 bot='dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>'
 # The whole Dockerfile, capturing the version and the digest.
 pin_re='^FROM ghcr\.io/trufflesecurity/trufflehog:([0-9]+\.[0-9]+\.[0-9]+)@(sha256:[0-9a-f]{64})$'
+min_age_hours=96
 
 skip() {
   printf '%s\n' "${1:0:500}"
@@ -56,6 +57,14 @@ registry_digest() {
   tr -d '\r' <<<"$headers" | awk 'tolower($1) == "docker-content-digest:" { print $2 }'
 }
 
+# release_published <version>: prints when the upstream GitHub Release of the
+# version was published, as GitHub records it, in UTC ISO 8601.
+release_published() {
+  curl --fail --silent --show-error --max-time 30 \
+    -H 'Accept: application/vnd.github+json' \
+    "https://api.github.com/repos/$repository/releases/tags/v$1" | jq -r '.published_at // empty'
+}
+
 tag=$(git tag --merged "$rev" --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)
 [ -n "$tag" ] || skip 'No release tag found'
 
@@ -99,6 +108,19 @@ served=$(registry_digest "$version") && [ -n "$served" ] ||
   skip "Could not get the digest of trufflehog:$version from ghcr.io"
 [ "$served" = "$digest" ] ||
   skip "ghcr.io serves $served for trufflehog:$version, but $dockerfile pins $digest"
+
+# ghcr.io gives Dependabot no publication date, so its cooldown never holds
+# back an image update. Wait out the minimum package age here instead, which
+# leaves time for a compromised upstream release to be found and pulled before
+# callers receive it. The workflow's daily run tags the image once it is old
+# enough. This lookup fails closed too.
+if ! published=$(release_published "$version") ||
+  ! [[ $published =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] ||
+  ! published_epoch=$(jq -nr --arg t "$published" '$t | fromdateiso8601'); then
+  skip "Could not get the publication time of TruffleHog $version from GitHub"
+fi
+[ "$(($(date +%s) - published_epoch))" -ge "$((min_age_hours * 3600))" ] ||
+  skip "TruffleHog $version was published at $published, less than $min_age_hours hours ago"
 
 IFS=. read -r major minor patch <<<"${tag#v}"
 echo "v$major.$minor.$((patch + 1))"
