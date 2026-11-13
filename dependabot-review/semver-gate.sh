@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Exits 0 when every dependency in UPDATED_DEPENDENCIES_JSON, the
 # updated-dependencies-json output of dependabot/fetch-metadata, is a patch or
-# minor update. Otherwise prints the reason on one line and exits 1, so a major
-# update anywhere in a grouped PR keeps the whole PR away from auto-merge.
+# minor update, or a Docker digest update that digest-updates.sh marked.
+# Otherwise prints the reason on one line and exits 1, so a major update
+# anywhere in a grouped PR keeps the whole PR away from auto-merge.
 set -euo pipefail
 
 json=${UPDATED_DEPENDENCIES_JSON:-}
@@ -34,4 +35,4 @@ block() {
 }
 
 block "Major update" '^version-update:semver-major$'
-block "Update type unknown" '^(?!version-update:semver-(patch|minor)$)'
+block "Update type unknown" '^(?!version-update:(semver-(patch|minor)|digest)$)'

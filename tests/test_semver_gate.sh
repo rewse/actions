@@ -36,8 +36,10 @@ expect() {
 patch='"version-update:semver-patch"'
 minor='"version-update:semver-minor"'
 major='"version-update:semver-major"'
+digest='"version-update:digest"'
 
 expect allows_patch_and_minor pass "[$(dep a "$patch"),$(dep b "$minor")]"
+expect allows_digest pass "[$(dep a "$patch"),$(dep b "$digest")]"
 expect blocks_major_in_group block "[$(dep a "$patch"),$(dep b "$major")]" "Major update: b"
 expect blocks_null_update_type block "[$(dep a null)]" "Update type unknown: a"
 expect blocks_major_with_empty_name block "[$(dep a "$patch"),$(dep "" "$major")]" "Major update"

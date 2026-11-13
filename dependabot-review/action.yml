@@ -67,15 +67,27 @@ runs:
 
     # Runs even when the metadata is missing, which the gate reports as a block.
     # Steps use !cancelled() rather than always(), so a run that concurrency
-    # cancels for a newer push does not report on the old commit.
+    # cancels for a newer push does not report on the old commit. The gate and
+    # Kiro read the metadata after digest-updates.sh marks the Docker digest
+    # updates, which fetch-metadata reports as major updates; when the diff
+    # cannot be fetched, they read it as fetch-metadata wrote it.
     - name: Check update types
       id: gate
       if: ${{ !cancelled() }}
       shell: bash
       env:
+        GH_REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
         UPDATED_DEPENDENCIES_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
       run: |
-        if reason=$("$GITHUB_ACTION_PATH/semver-gate.sh"); then
+        metadata=$RUNNER_TEMP/metadata.json
+        if gh pr diff "$PR" > "$RUNNER_TEMP/gate.diff"; then
+          "$GITHUB_ACTION_PATH/digest-updates.sh" "$RUNNER_TEMP/gate.diff" > "$metadata"
+        else
+          printf '%s\n' "$UPDATED_DEPENDENCIES_JSON" > "$metadata"
+        fi
+        if reason=$(UPDATED_DEPENDENCIES_JSON=$(<"$metadata") "$GITHUB_ACTION_PATH/semver-gate.sh"); then
           echo "gate=pass" >> "$GITHUB_OUTPUT"
         else
           echo "gate=block" >> "$GITHUB_OUTPUT"
@@ -98,11 +110,10 @@ runs:
         GH_REPO: ${{ github.repository }}
         GH_TOKEN: ${{ github.token }}
         PR: ${{ github.event.pull_request.number }}
-        UPDATED_DEPENDENCIES_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
       run: |
         input=$RUNNER_TEMP/kiro-input
         mkdir -p "$input"
-        printf '%s' "$UPDATED_DEPENDENCIES_JSON" > "$input/metadata.json"
+        cp "$RUNNER_TEMP/metadata.json" "$input/metadata.json"
         gh pr view "$PR" --json body --jq .body > "$input/body.md"
         gh pr diff "$PR" > "$input/diff.patch"
         nonce=$(openssl rand -hex 16)
